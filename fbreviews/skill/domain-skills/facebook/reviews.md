@@ -73,9 +73,10 @@ After a repair, run the loop again: `suspect` locations were not saved, so they 
 location stays `suspect` while preflight is healthy (an unusual page), save it as it is:
 `fb_save_result(loc, {**res, 'status': res['fallback_status']}, notes='health: ' + ', '.join(res['health']['failed']))`.
 Accepted outcomes, move on without investigating: `ok`, `partial`, `no_reviews`, `reviews_disabled`, `not_found`.
-Comments: Facebook shows only a comment COUNT under reviews (recommendations), never the thread itself — for any
-account, browser or the app. The helper records `comment_count` per review and marks `replies_unavailable`.
-Do NOT try to open or expand comment threads; it wastes page loads and cannot work. Spend at most ~5 steps on any
+Replies: under many reviews Facebook shows the Page's own reply as a PREVIEW in the list; the helper expands it
+("Вижте повече") and keeps the full text, with a second slow pass over the loaded list for late previews. Full comment
+threads (opening a review) do not load, so for other comments only `comment_count` is kept and the review carries
+`replies_unavailable`. Do NOT open review permalinks to read threads; it wastes page loads and cannot work. Spend at most ~5 steps on any
 single location; never re-run a saved location.
 - `unknown`: the reviews tab did not give a clear answer. Take a screenshot. If the Page has a "Reviews" /
   "Отзиви" tab under another URL or under "More"/"Още", open it with `fb_open` and run the extractor yourself:

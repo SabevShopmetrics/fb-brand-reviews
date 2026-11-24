@@ -54,6 +54,7 @@ class Reply(BaseModel):
     date_text: str | None = None
     permalink: str | None = None
     depth: int = 1  # 1 = direct reply to the review, 2 = reply to a reply
+    truncated: bool = False  # only Facebook's cut-off preview was available
     is_page_reply: bool = False
     reply_type: ReplyType | None = None
     generated_kind: Literal["template", "ai"] | None = None
@@ -78,6 +79,7 @@ class LocationResult(BaseModel):
     location: LocationPage
     status: LocationStatus
     reviews_url: str | None = None
+    review_total: int | None = None  # Facebook's own count for the Page ("94% препоръка (522 отзива)")
     reviews: list[Review] = Field(default_factory=list)
     notes: str = ""
     scraped_at: str = Field(default_factory=now_iso)
@@ -86,6 +88,7 @@ class LocationResult(BaseModel):
         replies = [r for rv in self.reviews for r in rv.replies]
         page = [r for r in replies if r.is_page_reply]
         return {
+            "facebook_review_total": self.review_total,
             "reviews": len(self.reviews),
             "recommends": sum(1 for r in self.reviews if r.recommends is True),
             "not_recommends": sum(1 for r in self.reviews if r.recommends is False),

@@ -42,8 +42,12 @@ pages, daily page cap) to keep the Facebook account safe: a few minutes per loca
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.
-- Comments: Facebook shows only the comment COUNT under reviews, not the comments themselves (any account,
-  browser or the app). The report therefore has `comment_count` per review and no reply texts — say so if asked.
+- Facebook's own total per location is `review_total` in each location of `report.json` (also in its `stats`).
+  Take numbers only from report.json, location by location; never quote totals from memory or from another location.
+- Replies: under many reviews Facebook shows the Page's own reply as a preview; the tool expands it ("Вижте
+  повече") and saves the full text, then classifies each Page reply as generated (template / AI) or manual. Full
+  threads of other people's comments are not shown by Facebook, so for those only `comment_count` is saved.
+  Mention how many Page replies there are and how many look generated vs manual.
 
 ## If it stopped
 - `Спрях заради Facebook` / `login_required` / `blocked`: Facebook asked for a login or a security check. Do not

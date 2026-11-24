@@ -15,7 +15,7 @@ window.__fbx = (function () {
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
   var EXPAND = new RegExp('^(' + [
-    'see more', 'view more comments', 'view previous comments', 'view more replies', 'view all \\d+ replies',
+    'see more', 'read more', 'вижте повече', 'вижте още', 'покажи повече', 'показване на още', 'view more comments', 'view previous comments', 'view more replies', 'view all \\d+ replies',
     'view \\d+ (more )?repl(y|ies)', '\\d+ repl(y|ies)', 'view 1 reply', 'more replies',
     'виж още', 'виж още коментари', 'виж предишните коментари', 'виж още отговори', 'виж всички \\d+ отговора',
     'виж \\d+ (още )?отговор(а)?', '\\d+ отговор(а)?', 'виж 1 отговор', 'още отговори',
@@ -136,13 +136,19 @@ window.__fbx = (function () {
     }
     author = author || linkAuthor;
     var texts = F.textBlocks(C, inner).filter(function (t) { return t !== author && !F.re.TIME_TXT.test(t); });
+    // Facebook puts a badge ("от автора" / "Author") before the text and "… Вижте повече" after a cut-off preview.
+    var joined = texts.join('\n')
+      .replace(/^(от автора|автор|author|by the author|top fan|топ фен)\s*/i, '');
+    var truncated = /(…|\.\.\.)?\s*(вижте повече|виж още|see more|read more)\s*$/i.test(joined);
+    joined = joined.replace(/\s*(…|\.\.\.)?\s*(вижте повече|виж още|see more|read more)\s*$/i, '').trim();
     var depth = 0, x = C;
     while (x && x !== P) { if (set.has(x)) depth++; x = x.parentElement; }
     if (F.re.REPLY_LABEL.test((C.getAttribute('aria-label') || '').trim())) depth = Math.max(depth, 2);
     var full = txt(C);
     return {
       author: author,
-      text: texts.join('\n'),
+      text: joined,
+      truncated: truncated,
       date_text: date,
       permalink: permalink,
       depth: Math.max(1, depth),
@@ -230,7 +236,10 @@ window.__fbx = (function () {
       if (!r.text && !r.reviewer) continue;
       var k = F.keyOf(r), old = acc.map[k];
       if (!old) { acc.order.push(k); acc.map[k] = r; continue; }
-      if ((r.replies || []).length > (old.replies || []).length) old.replies = r.replies;
+      // keep the richer replies: more of them, or the same ones with longer (expanded) text
+      var tl = function (rs) { return (rs || []).reduce(function (n, c) { return n + (c.text || '').length; }, 0); };
+      if ((r.replies || []).length > (old.replies || []).length ||
+          ((r.replies || []).length === (old.replies || []).length && tl(r.replies) > tl(old.replies))) old.replies = r.replies;
       if (r.text && (!old.text || r.text.length > old.text.length)) old.text = r.text;
       if (old.comment_count == null && r.comment_count != null) old.comment_count = r.comment_count;
     }
@@ -250,6 +259,9 @@ window.__fbx = (function () {
     var want = total ? Math.min(max, total) : max;
     var expanded = 0, c = 0, reason = null;
     for (var i = 0; i < steps; i++) {
+      // Expand "Вижте повече" on what is in view now and read it BEFORE scrolling on: Facebook empties reviews
+      // that leave the viewport, so an expansion read one step later is lost.
+      if (F.clickExpanders()) { await sleep(1200); F.accumulate(opts); }
       // Facebook fills placeholders only when they enter the viewport: walk down gradually, not straight to the end.
       var ps = F.posts();
       var firstEmpty = ps.filter(function (p) { return !txt(p); })[0];
@@ -257,8 +269,9 @@ window.__fbx = (function () {
       if (target) target.scrollIntoView({ block: 'center' });
       window.scrollBy(0, Math.round(window.innerHeight * 0.8));
       await sleep(firstEmpty ? delay * 2 : delay);   // a placeholder is still loading: give it time
-      expanded += F.clickExpanders();
-      await sleep(300);
+      var clicked = F.clickExpanders();
+      expanded += clicked;
+      await sleep(clicked ? 1000 : 300);   // let "Вижте повече" expand before reading
       c = F.accumulate(opts).order.length;
       if (c !== st.last) { st.stable = 0; st.last = c; st.lastNewAt = Date.now(); st.nudges = 0; }
       else st.stable += firstEmpty ? 0.5 : 1;
@@ -280,6 +293,29 @@ window.__fbx = (function () {
     return { count: c, target: want, review_total: total, expanded: expanded, done: !!reason, reason: reason,
              stable: st.stable, nudges: st.nudges, waited_ms: Date.now() - st.lastNewAt,
              visible: document.visibilityState };
+  }
+
+  // Second, slow pass over the already loaded list (no new page loads): Facebook renders the Page's reply previews
+  // under reviews with a delay and empties reviews that leave the viewport, so one pass misses some. Walk from the
+  // top to the end, expanding "Вижте повече" and reading at every step; the accumulator keeps the richest version.
+  async function sweep(opts) {
+    opts = opts || {};
+    var delay = opts.delayMs || 1200, maxMs = opts.sweepMaxMs || 240000, t0 = Date.now(), bottomHits = 0;
+    window.scrollTo(0, 0);
+    await sleep(delay);
+    while (Date.now() - t0 < maxMs) {
+      if (F.clickExpanders()) await sleep(delay);
+      F.accumulate(opts);
+      await sleep(500);                        // previews that render late
+      F.accumulate(opts);
+      var atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 80;
+      if (atEnd && ++bottomHits >= 2) break;
+      window.scrollBy(0, Math.round(window.innerHeight * 0.6));
+      await sleep(delay);
+    }
+    var acc = F.accumulate(opts);
+    var withReplies = acc.order.filter(function (k) { return (acc.map[k].replies || []).length; }).length;
+    return { reviews: acc.order.length, with_replies: withReplies, ms: Date.now() - t0 };
   }
 
   async function extract(opts) {
@@ -396,7 +432,7 @@ window.__fbx = (function () {
   F.clickExpanders = clickExpanders; F.isCommentEl = isCommentEl; F.posts = posts; F.commentSet = commentSet;
   F.ownerComment = ownerComment; F.cleanUrl = cleanUrl; F.textBlocks = textBlocks; F.labelAuthor = labelAuthor;
   F.parseComment = parseComment; F.parsePost = parsePost; F.keyOf = keyOf; F.accumulate = accumulate;
-  F.scroll = scroll; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  F.scroll = scroll; F.sweep = sweep; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

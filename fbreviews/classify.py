@@ -268,7 +268,7 @@ async def classify_replies(
                 "signals": heur[i][1],
             }
             for i, it in enumerate(items)
-            if csize[i] < 3  # template clusters are decided without the model
+            if csize[i] < 3 and not it.reply.truncated  # templates are decided without the model
         ]
         sem = asyncio.Semaphore(concurrency)
 
@@ -280,6 +280,10 @@ async def classify_replies(
 
     for i, it in enumerate(items):
         h, signals = heur[i]
+        if it.reply.truncated:  # only a cut-off preview: not enough text to judge
+            it.reply.reply_type, it.reply.generated_kind, it.reply.confidence = "uncertain", None, None
+            it.reply.signals, it.reply.llm_reason = ["truncated preview"], None
+            continue
         j = judged.get(i)
         p = h
         rp = it.reply

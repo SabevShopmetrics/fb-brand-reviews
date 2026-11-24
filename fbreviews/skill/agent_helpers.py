@@ -348,8 +348,12 @@ def _collect(opts, reset=False):
         st = _run("__fbx.scroll(" + json.dumps(opts) + ")") or {}
         if st.get("done"):
             break
+    sw = {}
+    if time.time() < deadline:   # second slow pass in the same page: late reply previews, expanded texts
+        sw = _run("__fbx.sweep(" + json.dumps({**opts, "sweepMaxMs": int(max(30, min(240, deadline - time.time())) * 1000)}) + ")") or {}
     data = _run("__fbx.extract(" + json.dumps(opts) + ")") or {}
     diag = data.get("diagnostics", {}) or {}
+    diag["sweep"] = sw
     diag["scroll_reason"] = st.get("reason") or ("time_limit" if not st.get("done") else None)
     diag["scroll"] = {k: st.get(k) for k in ("count", "target", "stable", "nudges", "waited_ms")}
     return data.get("reviews", []) or [], diag
@@ -374,6 +378,7 @@ def fb_save_result(location, result, notes=""):
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
     out = {"location": {**loc, "url": url}, "status": result.get("status", "unknown"),
            "reviews_url": result.get("reviews_url"), "reviews": result.get("reviews", []),
+           "review_total": (result.get("diagnostics") or {}).get("review_total"),
            "notes": "; ".join(x for x in (result.get("notes", ""), notes) if x)}
     _write(f"results/{fb_slug(url)}.json", out)
     partial = _WS / "results" / f"_partial_{fb_slug(url)}.json"

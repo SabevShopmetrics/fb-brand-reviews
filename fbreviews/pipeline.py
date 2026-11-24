@@ -45,7 +45,7 @@ def to_reviews(raw: list) -> list[Review]:
             continue
         replies = [
             Reply(author=c.get("author"), text=str(c.get("text") or ""), date_text=c.get("date_text"),
-                  permalink=c.get("permalink"), depth=int(c.get("depth") or 1))
+                  permalink=c.get("permalink"), depth=int(c.get("depth") or 1), truncated=bool(c.get("truncated")))
             for c in (r.get("replies") or []) if isinstance(c, dict)
         ]
         rec, rating, cc = r.get("recommends"), r.get("rating"), r.get("comment_count")
@@ -110,7 +110,9 @@ def load_results(run_dir: Path) -> list[LocationResult]:
             loc = {k: v for k, v in loc.items() if k in LocationPage.model_fields}
             loc.setdefault("name", loc.get("url", f.stem))
             status = d.get("status") if d.get("status") in STATUSES else "error"
+            rt = d.get("review_total")
             out.append(LocationResult(location=LocationPage(**loc), status=status, reviews_url=d.get("reviews_url"),
+                                      review_total=int(rt) if isinstance(rt, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or "")))
         except Exception as e:
             logger.warning("skipping %s: %s", f.name, e)

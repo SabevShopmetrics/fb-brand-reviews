@@ -66,6 +66,20 @@ comment_count, replies, replies_unavailable}`. Пак там е описано �
 `start.command` във Finder → пита за бранд → проверява OpenWork и модела → пуска агента. Enter без бранд продължава
 последното изпълнение. (Първия път: десен бутон → Open, ако macOS попита.)
 
+## Пускане от чата на OpenWork
+
+Инсталирайте скила веднъж (и след преместване на папката или `git pull`):
+
+```bash
+cd ~/Desktop/fb-brand-reviews && scripts/install_openwork_skill.sh
+```
+
+Скриптът слага `facebook-brand-reviews` във всеки локален workspace на OpenWork (`.opencode/skills/`). Рестартирайте
+OpenWork и пишете в чата, например: „Извлечи Facebook ревютата на Happy Bar & Grill, 2 локации, по 20 ревюта“.
+Агентът на OpenWork пуска инструмента на заден план (`scripts/run_bg.sh`), следи го (`scripts/status.sh`) и накрая
+обобщава отчета. Докато тече, не пипайте таба с Facebook. Спиране: `scripts/stop.sh`; продължаване:
+`scripts/run_bg.sh --resume`.
+
 ## За колеги: първо пускане
 
 Нужни са: Mac, **OpenWork**, **собствен профил във Facebook** и ключ за модела. Всеки ползва свой профил:

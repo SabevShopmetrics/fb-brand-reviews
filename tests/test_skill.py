@@ -1,0 +1,307 @@
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+from fbreviews.agents import install_skill, task_text
+from fbreviews.pipeline import load_results, progress_of
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_helpers(ws: Path):
+    """Load agent_helpers.py the way browser-harness does, with the workspace as BU_STATE_DIR's parent."""
+    aw = install_skill(ws, {"max_locations": 3, "pace_min_s": 0, "pace_max_s": 0})
+    import os
+    os.environ["BU_STATE_DIR"] = str(ws / ".browser-use")
+    spec = importlib.util.spec_from_file_location("agent_helpers_test", aw / "agent_helpers.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m, aw
+
+
+def test_install_and_task(tmp_path):
+    m, aw = load_helpers(tmp_path)
+    assert (aw / "domain-skills" / "facebook" / "reviews.md").exists()
+    assert (aw / "fb_extract.js").exists() and m._JS
+    t = task_text("Zara", aw, 50, None, 1, False)
+    assert "reviews.md" in t and "fb_progress()" in t
+
+
+def test_helpers_files(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    assert m.fb_page_url("https://m.facebook.com/ZaraSofia/reviews?x=1") == "https://www.facebook.com/ZaraSofia"
+    assert m.fb_reviews_url("https://www.facebook.com/profile.php?id=5") == "https://www.facebook.com/profile.php?id=5&sk=reviews"
+    r = m.fb_add_locations([
+        {"name": "Zara A", "url": "https://www.facebook.com/zaraa/"},
+        {"name": "dup", "url": "https://facebook.com/zaraa"},
+        {"name": "Zara B", "url": "https://www.facebook.com/profile.php?id=7&sk=about"},
+        {"name": "Zara C", "url": "https://www.facebook.com/zarac"},
+        {"name": "over cap", "url": "https://www.facebook.com/zarad"},
+        {"name": "search", "url": "https://www.facebook.com/search/pages?q=x"},
+    ])
+    assert r == {"added": 3, "total": 3, "cap": 3}
+    p = m.fb_progress()
+    assert p["locations"] == 3 and p["done"] == 0 and p["stopped"] is None
+    loc = p["todo"][0]
+    res = {"status": "ok", "reviews_url": m.fb_reviews_url(loc["url"]), "notes": "",
+           "reviews": [{"reviewer": "A", "recommends": True, "text": "ok", "comment_count": 1, "replies_unavailable": True,
+                        "replies": [{"author": "Zara A", "text": "Thanks!", "depth": 1}]}]}
+    assert m.fb_save_result(loc, res)["reviews"] == 1
+    assert m.fb_progress()["done"] == 1
+
+    run_dir = tmp_path.parent / tmp_path.name  # tmp_path plays the role of run_dir/workspace's parent
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    for f in ("locations.json",):
+        (tmp_path / "workspace" / f).write_text((tmp_path / f).read_text())
+    (tmp_path / "workspace" / "results").mkdir(exist_ok=True)
+    for f in (tmp_path / "results").glob("*.json"):
+        (tmp_path / "workspace" / "results" / f.name).write_text(f.read_text())
+    out = load_results(run_dir)
+    assert len(out) == 1 and out[0].reviews[0].replies_unavailable and out[0].reviews[0].comment_count == 1
+    assert progress_of(run_dir) == {"locations": 3, "done": 1, "stopped": None}
+
+
+def test_stop_file_blocks_navigation(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    (tmp_path / "STOP").write_text("blocked at x")
+    assert m.fb_open("https://www.facebook.com/x") == {"ok": False, "state": "stopped", "reason": "blocked at x"}
+
+
+# ------------------------------------------------------------------ preflight / self-repair
+import re
+import shutil
+import subprocess
+import types
+
+import pytest
+
+
+def _review(i, **kw):
+    r = {"reviewer": f"R{i}", "recommends": True, "rating": None, "text": f"text {i}", "date_text": "2 г.",
+         "permalink": f"https://www.facebook.com/r{i}/posts/pfbid{i}", "comment_count": None, "replies": [],
+         "header": f"R{i} препоръчва Zara"}
+    r.update(kw)
+    return r
+
+
+class FakePage:
+    """Stands in for browser_harness.helpers: records every js() source and answers by the trailing __fbx call."""
+
+    def __init__(self, reviews, total, tab_state="ok", search=None, broken=None):
+        self.reviews, self.total, self.tab_state = reviews, total, tab_state
+        self.search = search or []
+        self.broken = broken  # a substring: js() raises if the source contains it (an override that does not parse)
+        self.sources, self.urls = [], []
+
+    def goto_url(self, url):
+        self.urls.append(url)
+
+    def wait_for_load(self, timeout=20):
+        return True
+
+    def js(self, src):
+        self.sources.append(src)
+        if self.broken and self.broken in src:
+            raise RuntimeError("SyntaxError: Unexpected token")
+        tail = src.rsplit("\n", 1)[-1]
+        if "pageState()" in tail:
+            return {"state": "ok", "url": self.urls[-1] if self.urls else ""}
+        if "__fbx.scroll(" in tail:
+            return {"count": len(self.reviews), "done": True}
+        if "__fbx.extract(" in tail:
+            return {"reviews": [dict(r) for r in self.reviews],
+                    "diagnostics": {"review_total": self.total, "tab_state": self.tab_state, "url": "u"}}
+        if "searchResults()" in tail:
+            return self.search
+        return True
+
+
+@pytest.fixture
+def fake(tmp_path, monkeypatch):
+    m, aw = load_helpers(tmp_path)
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+
+    def use(page):
+        mod = types.ModuleType("browser_harness.helpers")
+        for k in ("goto_url", "wait_for_load", "js"):
+            setattr(mod, k, getattr(page, k))
+        monkeypatch.setitem(sys.modules, "browser_harness.helpers", mod)
+        return page
+    return m, use, tmp_path
+
+
+def test_preflight_skill_is_installed_and_referenced(tmp_path):
+    m, aw = load_helpers(tmp_path)
+    pre = aw / "domain-skills" / "facebook" / "preflight.md"
+    assert pre.exists() and "fb_save_override" in pre.read_text()
+    assert "preflight.md" in (aw / "domain-skills" / "facebook" / "reviews.md").read_text()
+    t = task_text("Zara", aw, 50, None, 1, False)
+    assert t.index("preflight.md") < t.index("reviews.md") and "fb_preflight()" in t
+    from fbreviews.agents import SYSTEM_RULES
+    assert "preflight.md" in SYSTEM_RULES and "fb_save_override" in SYSTEM_RULES
+    assert m.OPEN_THREADS is False
+
+
+def test_check_reviews_thresholds(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    good = [_review(i) for i in range(10)]
+    h = m.fb_check_reviews(good, {"review_total": 10, "tab_state": "ok"})
+    assert h["healthy"] is True and h["failed"] == [] and h["stats"]["coverage"] == 1.0
+
+    # Facebook changed the verdict wording: every recommends is null; text holds the header line
+    bad = [_review(i, recommends=None, text=None) for i in range(10)]
+    h = m.fb_check_reviews(bad, {"review_total": 10})
+    assert h["healthy"] is False and {"null_verdict", "empty_text"} <= set(h["failed"])
+
+    assert m.fb_check_reviews([], {"review_total": 12})["failed"] == ["found_reviews"]
+    assert m.fb_check_reviews([], {"review_total": None, "tab_state": "no_reviews"})["healthy"] is None
+    h = m.fb_check_reviews(good[:5], {"review_total": 40})
+    assert h["failed"] == ["coverage"]
+    assert m.fb_check_reviews(good[:5], {"review_total": 40}, max_reviews=5)["healthy"] is True
+    assert "over_total" in m.fb_check_reviews(good, {"review_total": 3})["failed"]
+    h = m.fb_check_reviews([_review(1, recommends="yes", comment_count="2")], {"review_total": 1})
+    assert h["failed"] == ["schema"] and "recommends" in h["details"]["schema"]
+    # tiny sample: one missing permalink out of 2 is fine, all missing is not
+    assert m.fb_check_reviews([_review(1), _review(2, permalink=None)], {"review_total": 2})["healthy"] is True
+    assert "missing_permalink" in m.fb_check_reviews([_review(1, permalink=None)], {"review_total": 1})["failed"]
+    assert any("not parsed" in w for w in m.fb_check_reviews(good, {})["warnings"])
+    assert m.fb_check_search([])["failed"] == ["search_results"]
+    assert m.fb_check_search([{"name": "Zara", "url": "u", "snippet": "Clothing store · Sofia"}])["healthy"] is True
+
+
+def test_preflight_healthy_and_unhealthy(fake):
+    m, use, ws = fake
+    m.fb_add_locations([{"name": "Zara A", "url": "https://www.facebook.com/zaraa"}])
+    assert m.fb_progress()["preflight"]["due"] is True
+    page = use(FakePage([_review(i) for i in range(8)], 8,
+                        search=[{"name": "Zara A", "href": "https://www.facebook.com/zaraa", "snippet": "Store"}]))
+    rep = m.fb_preflight(search_query="Zara")
+    assert rep["healthy"] is True and rep["reviews"]["url"] == "https://www.facebook.com/zaraa/reviews"
+    assert rep["search"]["healthy"] is True and len(page.urls) == 2  # reviews page + search page
+    pf = m.fb_progress()["preflight"]
+    assert pf["healthy"] is True and pf["due"] is False
+
+    use(FakePage([_review(i, recommends=None) for i in range(8)], 8))
+    rep = m.fb_preflight(reload=False)
+    assert rep["healthy"] is False and rep["failed"] == ["null_verdict"] and "Repair" in rep["next"]
+    assert m.fb_progress()["preflight"] == {**m.fb_progress()["preflight"], "healthy": False, "due": True,
+                                             "unhealthy_streak": 1}
+
+    (ws / "STOP").write_text("blocked at x")
+    assert m.fb_preflight()["stop"] is True
+
+
+def test_preflight_without_locations_is_inconclusive(fake):
+    m, use, _ = fake
+    use(FakePage([], None, search=[{"name": "Zara", "href": "https://www.facebook.com/zara", "snippet": "x"}]))
+    rep = m.fb_preflight(search_query="Zara")
+    assert rep["healthy"] is None and rep["search"]["healthy"] is True
+    assert m.fb_progress()["preflight"]["due"] is True
+
+
+def test_suspect_result_is_not_saved(fake):
+    m, use, ws = fake
+    loc = {"name": "Zara A", "url": "https://www.facebook.com/zaraa"}
+    use(FakePage([_review(i, text="") for i in range(6)], 6))
+    res = m.fb_extract_reviews(loc["url"], name=loc["name"], location=loc)
+    assert res["status"] == "suspect" and res["fallback_status"] == "ok" and "empty_text" in res["notes"]
+    assert "saved" not in res and not (ws / "results" / "zaraa.json").exists()
+    assert m._read("preflight.json", {})["run_alerts"][0]["failed"] == ["empty_text"]
+
+    use(FakePage([_review(i, comment_count=1 if i == 0 else None) for i in range(6)], 6))
+    res = m.fb_extract_reviews(loc["url"], name=loc["name"], location=loc)
+    assert res["status"] == "ok" and res["health"]["healthy"] is True and res["saved"]["reviews"] == 6
+    assert res["reviews"][0]["replies_unavailable"] is True
+
+    # the page says it has reviews but none were read: unknown (not saved), not "no_reviews"
+    use(FakePage([], 9, tab_state="no_reviews"))
+    assert m.fb_extract_reviews("https://www.facebook.com/zarab")["status"] == "unknown"
+
+
+def test_override_is_saved_loaded_and_logged(fake):
+    m, use, ws = fake
+    page = use(FakePage([_review(i) for i in range(6)], 6))
+    assert m.fb_save_override("__fbx.sel.unit = 'div.x';", "")["saved"] is False  # a note is required
+    assert m.fb_save_override("__fbx.pageState = function () { return {state: 'ok'}; };", "x")["saved"] is False
+    r = m.fb_save_override("__fbx.sel.unit = 'div.unit-v9';", "units lost aria-posinset")
+    assert r["saved"] is True and r["version"] == 1
+    src = (ws / "fb_extract_override.js").read_text()
+    assert "units lost aria-posinset" in src and "__fbx.override" in src
+
+    m.fb_js("__fbx.posts().length")
+    assert "div.unit-v9" in page.sources[-1]
+    assert page.sources[-1].index("div.unit-v9") < page.sources[-1].index("window.__fbx.pageState = __fbxSafePageState")
+    m.fb_open("https://www.facebook.com/zaraa/reviews")
+    assert "div.unit-v9" not in page.sources[-1]  # login / checkpoint check: bundled extractor only
+    m.fb_extract_reviews("https://www.facebook.com/zaraa", save=False)
+    assert all("div.unit-v9" in s for s in page.sources if "__fbx.extract(" in s.rsplit("\n", 1)[-1])
+
+    m.fb_add_locations([{"name": "Zara A", "url": "https://www.facebook.com/zaraa"}])
+    assert m.fb_preflight()["healthy"] is True
+    assert m.fb_override()["log"][-1]["preflight"][-1]["healthy"] is True
+
+    # a new helper load (next round / --resume) still uses the override from the workspace
+    m2, _ = load_helpers(ws)
+    assert "div.unit-v9" in m2._bundle("true")
+    assert m2.fb_progress()["override_active"] is True
+
+    assert m.fb_save_override("__fbx.sel.unit = 'div.y';", "v2")["version"] == 2
+    assert (ws / "overrides" / "fb_extract_override.1.js").exists()
+    assert m.fb_clear_override("back to bundled")["cleared"] is True
+    assert not (ws / "fb_extract_override.js").exists() and m.fb_override()["active"] is False
+
+
+def test_broken_override_falls_back_and_fails_preflight(fake):
+    m, use, ws = fake
+    m.fb_add_locations([{"name": "Zara A", "url": "https://www.facebook.com/zaraa"}])
+    (ws / "fb_extract_override.js").write_text("__fbx.sel.unit = BROKEN(;")  # written by hand, not checked
+    page = use(FakePage([_review(i) for i in range(6)], 6, broken="BROKEN(;"))
+    assert m.fb_js("__fbx.posts().length") is True  # fell back to the bundled extractor
+    assert "SyntaxError" in m.fb_override()["error"]
+    rep = m.fb_preflight()
+    assert rep["healthy"] is False and "override_parses" in rep["failed"]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
+def test_override_reaches_extractor_internals(tmp_path):
+    """Run the real fb_extract.js + an override in node with a stub DOM: internal calls go through __fbx, so
+    replacing a selector / function changes what scroll() and extract() use; pageState stays the bundled one."""
+    m, _ = load_helpers(tmp_path)
+    assert m.fb_save_override("__fbx.sel.unit = 'div.review-v2'; __fbx.reviewTotal = function () { return 77; };",
+                              "test")["saved"]
+    stub = """
+var seen = [];
+var el = {innerText: '', textContent: '', getAttribute: function () { return null; }};
+global.window = global; global.innerHeight = 800; global.scrollBy = function () {}; global.scrollTo = function () {};
+global.location = {href: 'https://www.facebook.com/x/reviews', pathname: '/x/reviews', search: ''};
+global.document = {title: 't', visibilityState: 'visible', body: el,
+  querySelectorAll: function (s) { seen.push(s); return []; }, querySelector: function () { return null; }};
+"""
+    src = stub + m._bundle("__fbx.extract({}).then(function (r) { console.log(JSON.stringify({seen: seen, d: r.diagnostics, "
+                           "same: __fbx.pageState === window.__fbx.pageState})); });")
+    f = tmp_path / "run.js"
+    f.write_text(src)
+    out = subprocess.run(["node", str(f)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    res = json.loads(out.stdout.strip().splitlines()[-1])
+    assert "div.review-v2" in res["seen"] and "[aria-posinset]" not in res["seen"]
+    assert res["d"]["review_total"] == 77 and res["d"]["override"]["version"] == 1 and res["same"] is True
+
+
+def test_counts_only_branch_reports_partial(fake):
+    m, use, ws = fake
+    # live case: the page says 522, max_reviews 20, only 14 were loaded → partial (saved), not ok
+    use(FakePage([_review(i) for i in range(14)], 522))
+    res = m.fb_extract_reviews("https://www.facebook.com/HappyMorskaGara", max_reviews=20)
+    assert res["status"] == "partial" and "only 14 of 20 reviews loaded" in res["notes"]
+    assert res["saved"]["status"] == "partial"
+    # everything up to max_reviews loaded → ok
+    use(FakePage([_review(i) for i in range(20)], 522))
+    assert m.fb_extract_reviews("https://www.facebook.com/x1", max_reviews=20)["status"] == "ok"
+    # far too few → suspect (not saved), fallback partial
+    use(FakePage([_review(i) for i in range(8)], 522))
+    res = m.fb_extract_reviews("https://www.facebook.com/x2", max_reviews=20)
+    assert res["status"] == "suspect" and res["fallback_status"] == "partial" and "coverage" in res["health"]["failed"]
+    # preflight flags the same shortfall (80% rule)
+    assert m.fb_check_reviews([_review(i) for i in range(14)], {"review_total": 522}, max_reviews=20)["failed"] == ["coverage"]

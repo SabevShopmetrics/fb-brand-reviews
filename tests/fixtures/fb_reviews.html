@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="bg"><head><meta charset="utf-8"><title>Zara Mall Sofia | Отзиви</title></head>
+<body>
+<!-- Synthetic fixture shaped like Facebook's reviews tab (feed units, ARIA comment labels, expand buttons). -->
+<div role="main"><div role="feed">
+
+  <div aria-posinset="1"><div role="article">
+    <div><h2><span><a href="/maria.ivanova">Мария Иванова</a> препоръчва <a href="/zaramallsofia">Zara Mall Sofia</a>.</span></h2>
+      <a href="https://www.facebook.com/maria.ivanova/posts/pfbid0abc?__cft__=x&__tn__=R">2 г.</a></div>
+    <div data-ad-rendering-role="story_message"><div dir="auto">Страхотен магазин, много любезен персонал и голям избор.</div></div>
+    <div role="button">Харесвам</div><div role="button">Коментар</div>
+    <ul>
+      <li><div role="article" aria-label="Коментар от Zara Mall Sofia преди 2 години">
+        <a href="/zaramallsofia">Zara Mall Sofia</a>
+        <div dir="auto">Thank you Мария for your kind review! We truly appreciate your feedback and hope to see you again soon.</div>
+        <a href="https://www.facebook.com/maria.ivanova/posts/pfbid0abc?comment_id=111&__cft__=y">2 г.</a>
+        <div role="button">Харесва</div><div role="button">Отговор</div>
+        <div role="button" class="expander" data-target="r1">Виж 1 отговор</div>
+        <div id="r1" hidden></div>
+      </div></li>
+    </ul>
+  </div></div>
+
+  <div aria-posinset="2"><div role="article">
+    <div><h2><span><a href="/georgi.p">Георги Петров</a> не препоръчва <a href="/zaramallsofia">Zara Mall Sofia</a>.</span></h2>
+      <a href="https://www.facebook.com/georgi.p/posts/pfbid0def">5 седм.</a></div>
+    <div data-ad-rendering-role="story_message"><div dir="auto">Опашката на касата беше 30 минути, работеше само една каса.</div></div>
+    <ul>
+      <li><div role="article" aria-label="Коментар от Zara Mall Sofia преди 5 седмици">
+        <a href="/zaramallsofia">Zara Mall Sofia</a>
+        <div dir="auto">Георги, прав сте за касите в събота, говорих с управителя :)</div>
+        <a href="https://www.facebook.com/georgi.p/posts/pfbid0def?comment_id=222">5 седм.</a>
+      </div></li>
+      <li><div role="article" aria-label="Коментар от Ани Колева преди 4 седмици">
+        <a href="/ani.k">Ани Колева</a>
+        <div dir="auto">и при мен така</div>
+        <a href="https://www.facebook.com/georgi.p/posts/pfbid0def?comment_id=223">4 седм.</a>
+      </div></li>
+    </ul>
+  </div></div>
+
+</div></div>
+<script>
+  // "Виж 1 отговор" reveals a nested reply, like Facebook does.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.expander'); if (!b) return;
+    var box = document.getElementById(b.dataset.target);
+    box.hidden = false;
+    box.innerHTML = '<div role="article" aria-label="Отговор от Мария Иванова преди 2 години">' +
+      '<a href="/maria.ivanova">Мария Иванова</a><div dir="auto">Благодаря, ще дойда пак!</div>' +
+      '<a href="https://www.facebook.com/maria.ivanova/posts/pfbid0abc?comment_id=111&reply_comment_id=333">2 г.</a></div>';
+    b.remove();
+  });
+  // A third review appears after scrolling (lazy loading).
+  var loaded = false;
+  window.addEventListener('scroll', function () {
+    if (loaded) return; loaded = true;
+    setTimeout(function () {
+      var d = document.createElement('div'); d.setAttribute('aria-posinset', '3');
+      d.innerHTML = '<div role="article"><div><h2><span><a href="/petya.d">Петя Димова</a> recommends <a href="/zaramallsofia">Zara Mall Sofia</a>.</span></h2>' +
+        '<a href="https://www.facebook.com/petya.d/posts/pfbid0ghi">1 г.</a></div>' +
+        '<div data-ad-rendering-role="story_message"><div dir="auto">Good prices.</div></div></div>';
+      document.querySelector('[role="feed"]').appendChild(d);
+    }, 300);
+  });
+  document.body.style.minHeight = '3000px';
+</script>
+<!-- The real extractor, loaded from the package, so the fixture tests the shipped file. -->
+<script src="../../fbreviews/js/fb_extract.js"></script>
+</body></html>

@@ -93,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--lite", action="store_true",
                     help="лек режим: само публичните данни на страниците (%% препоръка, брой ревюта, адрес); "
                          "във вградения браузър на OpenWork, профил не е нужен")
+    sc.add_argument("--country", help='държава (по подразбиране COUNTRY от .env или Bulgaria; "all" = всички)')
     sc.add_argument("--hidden", action="store_true",
                     help="с --lite: невидим отделен браузър без профил, вместо вградения на OpenWork")
 
@@ -125,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         run_dir = asyncio.run(pipeline.run(
             a.brand, s, out_dir=a.out, resume=a.resume, max_locations=a.max_locations, max_reviews=a.max_reviews,
-            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden,
+            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden, country=a.country,
         ))
         print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}")
         return 0

@@ -149,7 +149,8 @@ def _allow_long_cells() -> None:
 
 
 async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspace: Path, max_locations: int,
-                    hint: str | None, round_no: int, locations_given: bool, config: dict) -> RunSummary:
+                    hint: str | None, round_no: int, locations_given: bool, config: dict,
+                    country: str | None = None) -> RunSummary:
     from browser_use import Agent
 
     _allow_long_cells()
@@ -158,8 +159,13 @@ async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspac
     if not s.llm_vision:
         kwargs["use_vision"] = False
     lite = bool(config.get("lite"))
+    task = (task_text_lite if lite else task_text)(brand, aw, max_locations, hint, round_no, locations_given)
+    if country and country.lower() not in ("all", "world", "всички"):
+        task += (f"\nCountry: {country}. Take the brand's official Page for {country} (and the global one) and ONLY "
+                 f"locations in {country}; skip other countries' Pages (e.g. Germany) and their stores. Search with "
+                 f"{country} city names.")
     agent = Agent(
-        (task_text_lite if lite else task_text)(brand, aw, max_locations, hint, round_no, locations_given),
+        task,
         llm=llm, browser=browser, output_model_schema=RunSummary, workspace=str(workspace),
         extend_system_message=SYSTEM_RULES_LITE if lite else SYSTEM_RULES, judge=s.judge, **kwargs,
     )

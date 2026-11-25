@@ -167,6 +167,7 @@ async def run(
     use_llm_classifier: bool = True,
     lite: bool = False,
     hidden: bool = False,
+    country: str | None = None,
     progress=print,
 ) -> Path:
     from browser_use import Browser
@@ -192,7 +193,9 @@ async def run(
     if resume and meta.get("lite"):
         lite = True  # a lite run continues as lite
         hidden = hidden or bool(meta.get("hidden"))
+    country = country or meta.get("country") or s.country
     meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model,
+                 "country": country,
                  "lite": lite, "hidden": hidden})
     locations_given = False
     if locations_file:
@@ -220,8 +223,15 @@ async def run(
         # OpenWork's built-in browser, visible in its panel (full mode, and lite mode by default).
         bridge = BridgeThread(s.openwork_cdp_url, s.openwork_tab_match)
         bridge.start()
-        logged_in = None if lite else await asyncio.to_thread(
+        logged_in = await asyncio.to_thread(
             facebook_logged_in, s.openwork_cdp_url, (bridge.lease_info or {}).get("targetId"))
+        if lite and logged_in is True:
+            # Logged in: always take everything (reviews, replies) — whoever asked for lite.
+            lite = False
+            config["lite"] = False
+            meta["lite"] = False
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+            progress("Facebook в браузъра на OpenWork е логнат → пълен режим (всички ревюта и отговорите на страницата)")
         if not lite and logged_in is False:
             # Full mode needs a logged-in Facebook; without one, take what a visitor can see instead of stopping.
             lite = True
@@ -239,7 +249,7 @@ async def run(
             before = progress_of(run_dir)
             progress(f"Рунд {round_no}: агентът работи… (локации {before['locations']}, готови {before['done']})")
             try:
-                summary = await run_agent(brand, s=s, llm=llm, browser=browser, workspace=ws,
+                summary = await run_agent(brand, s=s, llm=llm, browser=browser, workspace=ws, country=country,
                                           max_locations=max_locations, hint=hint, round_no=round_no,
                                           locations_given=locations_given, config=config)
                 sm = summary.model_dump()

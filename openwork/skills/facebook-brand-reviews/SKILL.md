@@ -11,11 +11,15 @@ report the result. Do not scrape Facebook yourself and do not edit the tool's co
 
 Tool folder (TOOL_DIR): `__TOOL_DIR__`
 
-## Logged in or not — automatic
-If the built-in browser is NOT logged in to Facebook, the tool switches to lite mode by itself (it says
-"минавам автоматично на лек режим") — you do not need to choose. Without a login Facebook shows a visitor dialog like
-"Вижте повече от … — влезте"; that is normal: the tool reads the public data behind it. Tell the user not to close it
-and not to log in for a lite run.
+## Logged in or not — automatic (never choose the mode yourself)
+The tool decides by itself: logged in to Facebook in the built-in browser → FULL mode (all reviews, the Page's
+replies); not logged in → lite mode (public data only). Do NOT pass `lite` on your own — even if you think the user
+is logged out; the tool checks the real login. Without a login Facebook shows a visitor dialog like "Вижте повече от …
+— влезте"; that is normal. A remembered account screen ("Продължаване") is NOT a login.
+
+## Country
+Default country: Bulgaria (the brand's Bulgarian Page and its Bulgarian locations only). If the user names another
+country, pass it as the 5th argument: `scripts/run_bg.sh "<brand>" 0 0 auto "Romania"`; "all" = every country.
 
 ## Before starting
 1. (Full mode only — reviews and replies.) The built-in browser must be logged in to Facebook. If there is none, open
@@ -31,13 +35,8 @@ and not to log in for a lite run.
 cd "__TOOL_DIR__" && scripts/run_bg.sh "<brand>"
 ```
 (= everything. Only for an explicit quick test: `scripts/run_bg.sh "<brand>" <max_locations> <max_reviews>`.)
-**Lite mode (no Facebook profile needed):** add `lite` as the 4th argument
-(`scripts/run_bg.sh "<brand>" 0 0 lite` = all locations). It runs in this OpenWork's built-in browser, so the user can
-watch it, and collects only each location's public data: category, address, phone, website, % recommend and number
-of reviews — no review texts, no replies. It works whether or not that browser is logged in to Facebook; for a test
-that is truly without a profile, the user logs out of Facebook in the built-in browser themselves (never do it for
-them). `lite-hidden` instead of `lite` uses a hidden fresh browser with no account (nothing to watch).
-Use lite when the user has no Facebook profile to use, says "без профил / лек режим", or wants ratings/totals only.
+`lite-hidden` as the 4th argument runs a hidden fresh browser with no account (only if the user explicitly asks for
+an invisible run).
 It returns at once (`STARTED pid=… log=…`; `ALREADY_RUNNING` means a run is in progress — just follow it).
 The first run installs itself (2–3 minutes).
 

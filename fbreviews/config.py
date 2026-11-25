@@ -56,6 +56,7 @@ class Settings:
     pace_max_s: float
     daily_page_cap: int
     location_max_s: int
+    country: str
     judge: bool
 
     @classmethod
@@ -79,6 +80,7 @@ class Settings:
             pace_max_s=_float("PACE_MAX_SECONDS", 14.0) or 14.0,
             daily_page_cap=_int("DAILY_PAGE_CAP", 5000),
             location_max_s=_int("LOCATION_MAX_SECONDS", 3600),
+            country=os.environ.get("COUNTRY", "").strip() or "Bulgaria",
             judge=_bool("AGENT_JUDGE", False),
         )
 

@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Start a scrape in the background and return at once (for OpenWork's agent, whose commands have a time limit).
-#   scripts/run_bg.sh "Zara" [max_locations=0] [max_reviews=0] [lite|lite-hidden]     (0 = all, the default)
+#   scripts/run_bg.sh "Zara" [max_locations=0] [max_reviews=0] [auto|lite-hidden] [country]   (0 = all, the default)
+#   The mode is automatic: logged in to Facebook in OpenWork -> full mode; logged out -> lite. Country default: Bulgaria.
 #   lite        = only public Page data (% recommend, number of reviews, address, phone), in OpenWork's visible browser
 #   lite-hidden = the same in a hidden fresh browser with no Facebook account (OpenWork not needed)
 #   scripts/run_bg.sh --resume            # continue the latest run
@@ -27,6 +28,7 @@ else
     lite|--lite) args+=(--lite) ;;
     lite-hidden|hidden) args+=(--lite --hidden) ;;
   esac
+  [ -n "$5" ] && args+=(--country "$5")
 fi
 nohup zsh scripts/_job.sh "${args[@]}" > "$log" 2>&1 < /dev/null &
 echo $! > output/runs/current.pid

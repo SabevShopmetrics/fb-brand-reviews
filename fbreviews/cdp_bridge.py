@@ -388,3 +388,28 @@ class BridgeThread:
 
     def __exit__(self, *exc: Any) -> None:
         self.stop()
+
+
+def facebook_logged_in(upstream_http: str, target_id: str | None) -> bool | None:
+    """Is OpenWork's built-in browser logged in to Facebook? Reads the facebook.com cookies of that tab (c_user is set
+    only for a logged-in account). True / False, or None when it cannot tell. Reads only; changes nothing."""
+    if not target_id:
+        return None
+
+    async def check() -> bool | None:
+        ws_base = _http_json(f"{upstream_http.rstrip('/')}/json/version")["webSocketDebuggerUrl"].split("/devtools/")[0]
+        async with ws_connect(f"{ws_base}/devtools/page/{target_id}", max_size=None, ping_interval=None) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Network.getCookies", "params": {"urls": ["https://www.facebook.com"]}}))
+            while True:
+                msg = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                if msg.get("id") == 1:
+                    cookies = (msg.get("result") or {}).get("cookies")
+                    if cookies is None:
+                        return None
+                    return any(c.get("name") == "c_user" and c.get("value") for c in cookies)
+
+    try:
+        return asyncio.run(check())
+    except Exception as e:
+        logger.debug("login check failed: %s", e)
+        return None

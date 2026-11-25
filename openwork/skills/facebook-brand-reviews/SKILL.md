@@ -11,8 +11,14 @@ report the result. Do not scrape Facebook yourself and do not edit the tool's co
 
 Tool folder (TOOL_DIR): `__TOOL_DIR__`
 
+## Logged in or not — automatic
+If the built-in browser is NOT logged in to Facebook, the tool switches to lite mode by itself (it says
+"минавам автоматично на лек режим") — you do not need to choose. Without a login Facebook shows a visitor dialog like
+"Вижте повече от … — влезте"; that is normal: the tool reads the public data behind it. Tell the user not to close it
+and not to log in for a lite run.
+
 ## Before starting
-1. (Full mode only.) The built-in browser must have a **facebook.com** tab, logged in. If there is none, open
+1. (Full mode only — reviews and replies.) The built-in browser must be logged in to Facebook. If there is none, open
    `https://www.facebook.com/` in the built-in browser and ask the user to log in there. Never type credentials,
    never log in for them.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill

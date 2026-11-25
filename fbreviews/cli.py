@@ -35,9 +35,14 @@ def cmd_check(s: Settings, quiet: bool = False, lite: bool = False, hidden: bool
                 print(f"  ✓ мостът работи; агентът ще ползва таба: {url}")
                 if lite:
                     print("  лек режим: Facebook профил не е нужен (ако сте логнати там, пак работи)")
-                elif "facebook.com" not in url:
-                    ok = False
-                    print("  ✗ няма таб с Facebook — отворете facebook.com във вградения браузър на OpenWork")
+                else:
+                    from .cdp_bridge import facebook_logged_in
+
+                    li = facebook_logged_in(s.openwork_cdp_url, (b.lease_info or {}).get("targetId"))
+                    if li is True:
+                        print("  ✓ Facebook е логнат: пълен режим (ревюта и отговори)")
+                    elif li is False:
+                        print("  ! Facebook не е логнат: ще мине автоматично на лек режим (публичните данни)")
         except Exception as e:
             ok = False
             print(f"  ✗ {e}")

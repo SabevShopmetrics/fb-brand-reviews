@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from .cdp_bridge import BridgeThread
+from .cdp_bridge import BridgeThread, facebook_logged_in
 from .classify import classify_replies
 from .config import Settings
 from .export import summarize, write_excel, write_json
@@ -220,6 +220,16 @@ async def run(
         # OpenWork's built-in browser, visible in its panel (full mode, and lite mode by default).
         bridge = BridgeThread(s.openwork_cdp_url, s.openwork_tab_match)
         bridge.start()
+        logged_in = None if lite else await asyncio.to_thread(
+            facebook_logged_in, s.openwork_cdp_url, (bridge.lease_info or {}).get("targetId"))
+        if not lite and logged_in is False:
+            # Full mode needs a logged-in Facebook; without one, take what a visitor can see instead of stopping.
+            lite = True
+            config["lite"] = True
+            meta["lite"] = True
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+            progress("Facebook в браузъра на OpenWork не е логнат → минавам автоматично на лек режим "
+                     "(публичните данни на страниците: % препоръка, брой ревюта, адрес, телефон)")
         mode = "лек режим: само публичните данни на страниците" if lite else "пълен режим"
         progress(f"Браузър: вграденият на OpenWork ({mode}), таб {(bridge.lease_info or {}).get('url', '?')}")
         browser = Browser(cdp_url=bridge.url, keep_alive=True)

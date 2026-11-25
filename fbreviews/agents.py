@@ -165,6 +165,11 @@ async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspac
         task += (f"\nCountry: {country}. Take the brand's official Page for {country} (and the global one) and ONLY "
                  f"locations in {country}; skip other countries' Pages (e.g. Germany) and their stores. Search with "
                  f"{country} city names.")
+    else:
+        task += ("\nCountries: ALL (the whole world). Record the brand's global Page and its official Page for each "
+                 "country (scope = the country) with fb_add_brand_pages, and locations in every country. Search with "
+                 "the brand plus country names and big cities worldwide. Fill `country` (English name, e.g. 'Bulgaria', "
+                 "'Romania') and `city` for EVERY location you add.")
     agent = Agent(
         task,
         llm=llm, browser=browser, output_model_schema=RunSummary, workspace=str(workspace),

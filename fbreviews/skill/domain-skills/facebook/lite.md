@@ -42,7 +42,7 @@ fb_add_brand_pages([{'name': 'Lidl България', 'url': 'https://www.facebo
 for b in fb_progress()['brand_todo']:
     print(fb_extract_brand(b['url'], name=b['name']))   # public data, saved under brand/
 ```
-At most 3 brand Pages (global and country).
+Brand Pages: the global one and one official Page per country in scope (`scope` = 'global' or the country).
 
 ## Phase 2: every location
 ```python

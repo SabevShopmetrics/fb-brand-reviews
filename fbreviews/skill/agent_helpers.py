@@ -90,6 +90,43 @@ def _write(name, value):
     tmp.replace(p)
 
 
+_COUNTRY_BG = {"българия": "Bulgaria", "румъния": "Romania", "гърция": "Greece", "сърбия": "Serbia", "турция": "Turkey",
+               "германия": "Germany", "австрия": "Austria", "италия": "Italy", "испания": "Spain", "франция": "France",
+               "великобритания": "United Kingdom", "обединеното кралство": "United Kingdom", "сащ": "United States",
+               "македония": "North Macedonia", "северна македония": "North Macedonia", "хърватия": "Croatia",
+               "полша": "Poland", "чехия": "Czech Republic", "унгария": "Hungary", "кипър": "Cyprus", "молдова": "Moldova",
+               "украйна": "Ukraine", "нидерландия": "Netherlands", "холандия": "Netherlands", "белгия": "Belgium",
+               "швейцария": "Switzerland", "португалия": "Portugal", "словения": "Slovenia", "словакия": "Slovakia",
+               "черна гора": "Montenegro", "албания": "Albania", "босна и херцеговина": "Bosnia and Herzegovina"}
+_COUNTRY_EN = {"us": "United States", "usa": "United States", "uk": "United Kingdom", "bg": "Bulgaria"}
+
+
+def fb_country(text):
+    """Country from an address like 'Sea Garden, Varna, Bulgaria, 9000' or 'ул. …, София, България' → 'Bulgaria'."""
+    parts = [p.strip() for p in str(text or "").split(",") if p.strip()]
+    for p in reversed(parts):
+        p2 = re.sub(r"\d[\d\s-]*", "", p).strip(" .")
+        if not p2:
+            continue
+        low = p2.lower()
+        if low in _COUNTRY_BG:
+            return _COUNTRY_BG[low]
+        if low in _COUNTRY_EN:
+            return _COUNTRY_EN[low]
+        if re.fullmatch(r"[A-Z][A-Za-z .'-]{2,40}", p2) and len(parts) >= 2:
+            return p2   # an English country name, as Facebook prints it
+        return None
+    return None
+
+
+def _fill_country(loc):
+    if not loc.get("country"):
+        c = fb_country(loc.get("address"))
+        if c:
+            loc["country"] = c
+    return loc
+
+
 def fb_page_url(url):
     """Canonical https://www.facebook.com/<page> (or profile.php?id=N); None when it is not a Page URL."""
     url = (url or "").strip()
@@ -308,8 +345,8 @@ def fb_add_locations(items):
         url = fb_page_url((it or {}).get("url", ""))
         if not url or url in known or len(locs) >= MAX_LOCATIONS:
             continue
-        locs.append({k: it.get(k) for k in ("name", "address", "city", "country", "category", "rating_text", "source")}
-                    | {"url": url})
+        locs.append(_fill_country({k: it.get(k) for k in ("name", "address", "city", "country", "category", "rating_text", "source")}
+                                  | {"url": url}))
         known.add(url)
         added += 1
     _write("locations.json", locs)
@@ -504,6 +541,7 @@ def fb_save_result(location, result, notes="", folder="results"):
     for k, v in ((result.get("diagnostics") or {}).get("page") or {}).items():
         if v and not loc.get(k) and k != "name":
             loc[k] = v
+    _fill_country(loc)
     out = {"location": {**loc, "url": url}, "status": result.get("status", "unknown"),
            "reviews_url": result.get("reviews_url"), "reviews": result.get("reviews", []),
            "review_total": (result.get("diagnostics") or {}).get("review_total"),
@@ -946,6 +984,7 @@ def fb_save_summary(location, summary, folder="results"):
             loc[k] = summary[k]
     if summary.get("name") and (not loc.get("name") or " " not in loc["name"]):  # a slug like "HappyRakovski"
         loc["name"] = summary["name"]
+    _fill_country(loc)
     if summary.get("recommend_pct") is not None:
         loc["rating_text"] = f"{summary['recommend_pct']}% препоръка ({summary.get('review_total')} отзива)"
     state = summary.get("state", "unknown")
@@ -1001,7 +1040,9 @@ def fb_extract_brand(url, name=None, max_reviews=None):
     summary = fb_page_summary(page)
     if summary.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
         return {"status": summary["state"], "url": page, "reason": summary.get("reason")}
-    loc = {"name": summary.get("name") or name or page, "url": page, "source": "brand_page"}
+    scope = next((b.get("scope") for b in fb_brand_pages() if b.get("url") == page), None)
+    loc = {"name": summary.get("name") or name or page, "url": page, "source": "brand_page",
+           "country": (scope if scope and str(scope).lower() not in ("global", "country", "world") else None)}
     for k in ("category", "address", "phone", "website", "followers", "price", "email"):
         if summary.get(k):
             loc[k] = summary[k]

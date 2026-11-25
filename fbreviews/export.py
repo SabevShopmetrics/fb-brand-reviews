@@ -84,18 +84,18 @@ def write_excel(report: BrandReport, path: Path) -> None:
         for loc in items:
             st = loc.stats()
             l = loc.location
-            out.append([l.name, l.category, l.city, l.address, l.phone, l.website, l.email, l.followers, l.url,
+            out.append([l.name, l.country, l.category, l.city, l.address, l.phone, l.website, l.email, l.followers, l.url,
                         STATUS_BG.get(loc.status, loc.status), loc.recommend_pct, loc.review_total, st["reviews"],
                         st["recommends"], st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
                         st["reviews_with_page_reply"], st["page_replies"], st["generated"], st["manual"], st["uncertain"],
                         loc.notes])
         return out
 
-    PAGE_HEADERS = ["Страница", "Категория", "Град", "Адрес", "Телефон", "Сайт", "Имейл", "Последователи", "Facebook",
+    PAGE_HEADERS = ["Страница", "Държава", "Категория", "Град", "Адрес", "Телефон", "Сайт", "Имейл", "Последователи", "Facebook",
                     "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват",
                     "Не препоръчват", "Ревюта с коментари", "Коментари (брой по FB)", "Ревюта с отговор от страницата",
                     "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Бележки"]
-    PAGE_WIDTHS = [36, 18, 12, 30, 14, 18, 22, 12, 40, 16, 11, 12, 11, 11, 11, 12, 12, 14, 12, 11, 8, 8, 40]
+    PAGE_WIDTHS = [36, 14, 18, 12, 30, 14, 18, 22, 12, 40, 16, 11, 12, 11, 11, 11, 12, 12, 14, 12, 11, 8, 8, 40]
     if report.brand_sections:
         _sheet(wb, "Бранд", PAGE_HEADERS, page_rows(report.brand_sections), PAGE_WIDTHS)
 

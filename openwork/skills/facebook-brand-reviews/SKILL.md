@@ -18,8 +18,10 @@ is logged out; the tool checks the real login. Without a login Facebook shows a 
 — влезте"; that is normal. A remembered account screen ("Продължаване") is NOT a login.
 
 ## Country
-Default country: Bulgaria (the brand's Bulgarian Page and its Bulgarian locations only). If the user names another
-country, pass it as the 5th argument: `scripts/run_bg.sh "<brand>" 0 0 auto "Romania"`; "all" = every country.
+Default: the WHOLE WORLD — the brand's global Page, its official Page per country, and locations in every country;
+the report splits everything by country (report.html: "По държави" table and a country filter). Only if the user
+names one country, pass it as the 5th argument to limit the run: `scripts/run_bg.sh "<brand>" 0 0 auto "Bulgaria"`.
+When you report the result, give the per-country summary first.
 
 ## Before starting
 1. (Full mode only — reviews and replies.) The built-in browser must be logged in to Facebook. If there is none, open

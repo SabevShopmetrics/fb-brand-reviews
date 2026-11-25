@@ -59,8 +59,9 @@ fb_add_brand_pages([{'name': 'Lidl България', 'url': 'https://www.facebo
 for b in fb_progress()['brand_todo']:
     print(fb_extract_brand(b['url'], name=b['name']))   # public data + reviews/replies, saved under brand/
 ```
-Record them as soon as you identify them (step 1 of Phase 1) and extract them before the locations. Keep the brand
-Pages to the official global and country ones (verified, large follower counts); at most 3.
+Record them as soon as you identify them (step 1 of Phase 1) and extract them before the locations. Brand Pages
+are the official global Page and the official Page of each country (verified, large follower counts), with
+`scope` = 'global' or the country name; only countries in scope of the task.
 
 ## Before Phase 2 — preflight
 If `fb_progress()['preflight']['due']` is true, run `fb_preflight()` (it uses the first saved locations). If it is not

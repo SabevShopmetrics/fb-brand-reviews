@@ -57,6 +57,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
   <div class="sub" id="subtitle"></div>
   <div class="grid kpis" id="kpis"></div>
 
+  <h2>По държави</h2>
+  <div class="filters"><select id="fCountry"></select><span class="small">филтърът важи за целия отчет отдолу</span></div>
+  <div class="card tablewrap"><table id="ctable"></table></div>
+
   <h2>Страници на бранда</h2>
   <div class="grid two" id="brands"></div>
 
@@ -112,19 +116,49 @@ function methodBg(m) {
   return 'Метод: ' + m.replace('template clusters', 'шаблонни клъстери').replace('style heuristics', 'стилови сигнали').replace('model judge', 'модел');
 }
 const pages = [...(D.brand_sections || []).map(p => ({...p, _brand: true})), ...(D.locations || [])];
-const reviews = [];
+const countryOf = p => (p.location && p.location.country) || (p._brand ? 'Глобална' : 'Без държава');
+const ALL_REVIEWS = [];
 pages.forEach((p, pi) => (p.reviews || []).forEach((r, ri) => {
   const d = parseDate(r);
-  reviews.push({...r, _page: p, _pi: pi, _date: d, _ts: d ? d.getTime() : 0,
+  ALL_REVIEWS.push({...r, _page: p, _pi: pi, _date: d, _ts: d ? d.getTime() : 0, _country: countryOf(p),
     _pageReplies: (r.replies || []).filter(x => x.is_page_reply)});
 }));
-const locs = D.locations || [];
+const ALL_LOCS = D.locations || [];
+let selCountry = '';
+const inC = p => !selCountry || countryOf(p) === selCountry;
 
-// header + KPIs
 document.title = `${D.brand} — Facebook ревюта`;
 document.getElementById('title').textContent = `${D.brand} — Facebook ревюта и отговори`;
+const COUNTRIES = [...new Set(pages.map(countryOf))].sort((a, b) => a.localeCompare(b, 'bg'));
 document.getElementById('subtitle').textContent =
-  `Генерирано ${new Date(D.generated_at).toLocaleString('bg-BG')} · ${locs.length} локации · ${(D.brand_sections||[]).length} страници на бранда · модел ${D.model || '—'}`;
+  `Генерирано ${new Date(D.generated_at).toLocaleString('bg-BG')} · ${COUNTRIES.length} държави · ${ALL_LOCS.length} локации · ${(D.brand_sections||[]).length} страници на бранда · модел ${D.model || '—'}`;
+
+// countries table + filter
+const fCountry = document.getElementById('fCountry');
+fCountry.innerHTML = '<option value="">Всички държави</option>' + COUNTRIES.map(c => `<option>${esc(c)}</option>`).join('');
+function renderCountries() {
+  const rows = COUNTRIES.map(c => {
+    const ps = pages.filter(p => countryOf(p) === c), ls = ps.filter(p => !p._brand), rs = ALL_REVIEWS.filter(r => r._country === c);
+    const rec = rs.filter(r => r.recommends === true).length, nrec = rs.filter(r => r.recommends === false).length;
+    const pcts = ls.map(l => l.recommend_pct).filter(v => v != null);
+    return {c, brands: ps.length - ls.length, locs: ls.length, fb: ls.reduce((a, l) => a + (l.review_total || 0), 0), got: rs.length,
+      share: pct(rec, rec + nrec), avg: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null,
+      replies: rs.filter(r => r._pageReplies.length).length};
+  }).sort((a, b) => b.locs - a.locs || b.got - a.got);
+  document.getElementById('ctable').innerHTML = `<thead><tr><th>Държава</th><th class="n">Стр. на бранда</th><th class="n">Локации</th>
+    <th class="n">Ревюта във FB</th><th class="n">Извлечени</th><th>Препоръчват (извлечени)</th><th class="n">Средно % (FB)</th><th class="n">С отговор от стр.</th></tr></thead>
+    <tbody>${rows.map(r => `<tr data-c="${esc(r.c)}" style="cursor:pointer${selCountry === r.c ? ';background:var(--chip)' : ''}"><td><b>${esc(r.c)}</b></td>
+    <td class="n">${r.brands}</td><td class="n">${r.locs}</td><td class="n">${fmt(r.fb)}</td><td class="n">${fmt(r.got)}</td>
+    <td>${r.share == null ? '—' : `<div style="display:flex;gap:6px;align-items:center"><div class="bar" style="flex:1"><i style="width:${r.share}%"></i></div>${r.share}%</div>`}</td>
+    <td class="n">${r.avg == null ? '—' : r.avg + '%'}</td><td class="n">${r.replies}</td></tr>`).join('')}</tbody>`;
+  document.querySelectorAll('#ctable tbody tr').forEach(tr => tr.onclick = () => setCountry(selCountry === tr.dataset.c ? '' : tr.dataset.c));
+}
+function setCountry(c) { selCountry = c; fCountry.value = c; renderCountries(); renderAll(); shown = 50; render(); }
+fCountry.onchange = () => setCountry(fCountry.value);
+
+function renderAll() {
+const reviews = ALL_REVIEWS.filter(r => !selCountry || r._country === selCountry);
+const locs = ALL_LOCS.filter(inC);
 const rec = reviews.filter(r => r.recommends === true).length, nrec = reviews.filter(r => r.recommends === false).length;
 const fbTotal = locs.reduce((a, l) => a + (l.review_total || 0), 0);
 const withPage = reviews.filter(r => r._pageReplies.length).length;
@@ -140,9 +174,9 @@ document.getElementById('kpis').innerHTML = kpis.map(([l, v]) => `<div class="ca
 
 // brand pages
 const bwrap = document.getElementById('brands');
-bwrap.innerHTML = (D.brand_sections || []).map(b => { const L = b.location || {};
+bwrap.innerHTML = (D.brand_sections || []).filter(b => inC({...b, _brand: true})).map(b => { const L = b.location || {};
   return `<div class="card brandcard"><h3><a href="${esc(L.url)}" target="_blank">${esc(L.name)}</a></h3>
-  <div class="row">${[L.category, L.price, L.followers && L.followers + ' последователи', L.website, L.phone, L.email, L.address].filter(Boolean).map(esc).join(' · ')}</div>
+  <div class="row"><span class="pill">${esc(countryOf({...b, _brand: true}))}</span>${[L.category, L.price, L.followers && L.followers + ' последователи', L.website, L.phone, L.email, L.address].filter(Boolean).map(esc).join(' · ')}</div>
   <div class="row"><span>${b.recommend_pct != null ? `<b>${b.recommend_pct}%</b> препоръка` : 'без препоръки на страницата'}</span>
   <span>${b.review_total != null ? fmt(b.review_total) + ' ревюта във FB' : ''}</span><span>${(b.reviews||[]).length ? (b.reviews.length + ' извлечени') : ''}</span>
   <span class="pill">${STATUS[b.status] || b.status}</span></div></div>`; }).join('') || '<div class="card empty">Не е намерена официална страница на бранда.</div>';
@@ -150,6 +184,8 @@ bwrap.innerHTML = (D.brand_sections || []).map(b => { const L = b.location || {}
 // locations table
 const cols = [
   ['Локация', l => l.location.name, (l, v) => `<a href="${esc(l.location.url)}" target="_blank">${esc(v)}</a><div class="small">${esc([l.location.category, l.location.address].filter(Boolean).join(' · '))}</div>`],
+  ['Държава', l => countryOf(l), (l, v) => esc(v)],
+  ['Град', l => l.location.city || '', (l, v) => esc(v) || '—'],
   ['Статус', l => STATUS[l.status] || l.status, (l, v) => `<span class="pill">${esc(v)}</span>`],
   ['% препоръка', l => l.recommend_pct ?? -1, (l, v) => v < 0 ? '—' : `<div style="display:flex;gap:6px;align-items:center"><div class="bar" style="flex:1"><i style="width:${v}%"></i></div>${v}%</div>`],
   ['Ревюта във FB', l => l.review_total ?? -1, (l, v) => v < 0 ? '—' : fmt(v), 'n'],
@@ -161,7 +197,7 @@ const cols = [
     (l, v) => v ? new Date(v).toLocaleDateString('bg-BG') : '—', 'n'],
   ['Последователи', l => l.location.followers || '', (l, v) => esc(v) || '—', 'n'],
 ];
-let sortCol = 2, sortDir = -1;
+let sortCol = 4, sortDir = -1;
 function renderTable() {
   const rows = [...locs].sort((a, b) => { const x = cols[sortCol][1](a), y = cols[sortCol][1](b);
     return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
@@ -221,14 +257,16 @@ hbars(document.getElementById('chartPct'),
     <div class="small" style="margin-top:8px">${esc(methodBg(D.classification_method || ''))}</div>`;
 })();
 
+}  // end renderAll
+
 // reviews explorer
 const fLoc = document.getElementById('fLoc');
-fLoc.innerHTML = '<option value="">Всички страници</option>' + pages.map((p, i) => `<option value="${i}">${p._brand ? '[Бранд] ' : ''}${esc(p.location.name)} (${(p.reviews || []).length})</option>`).join('');
+fLoc.innerHTML = '<option value="">Всички страници</option>' + pages.map((p, i) => `<option value="${i}">${p._brand ? '[Бранд] ' : ''}${esc(p.location.name)} · ${esc(countryOf(p))} (${(p.reviews || []).length})</option>`).join('');
 let shown = 50, current = [];
 function filtered() {
   const loc = fLoc.value, v = document.getElementById('fVerdict').value, q = document.getElementById('fText').value.trim().toLowerCase();
   const onlyReply = document.getElementById('fReply').checked, onlyPhoto = document.getElementById('fPhoto').checked, s = document.getElementById('fSort').value;
-  let out = reviews.filter(r => (loc === '' || r._pi === +loc) && (!v || (v === 'pos' ? r.recommends === true : r.recommends === false))
+  let out = ALL_REVIEWS.filter(r => (!selCountry || r._country === selCountry) && (loc === '' || r._pi === +loc) && (!v || (v === 'pos' ? r.recommends === true : r.recommends === false))
     && (!onlyReply || r._pageReplies.length) && (!onlyPhoto || r.photos > 0)
     && (!q || [r.text, r.reviewer, (r.tags || []).join(' '), (r.replies || []).map(x => x.text).join(' ')].join(' ').toLowerCase().includes(q)));
   const by = {new: (a, b) => b._ts - a._ts, old: (a, b) => a._ts - b._ts, react: (a, b) => (b.reactions || 0) - (a.reactions || 0), long: (a, b) => (b.text || '').length - (a.text || '').length};
@@ -248,7 +286,7 @@ function render() {
     <div class="card rev"><div class="head">
       <span class="who">${esc(r.reviewer || '—')}</span>
       ${r.recommends === true ? '<span class="pill pos">препоръчва</span>' : r.recommends === false ? '<span class="pill neg">не препоръчва</span>' : ''}
-      <span class="meta">${esc(r.date_full || r.date_text || '')} · ${r._page._brand ? '[Бранд] ' : ''}${esc(r._page.location.name)}</span>
+      <span class="meta">${esc(r.date_full || r.date_text || '')} · ${r._page._brand ? '[Бранд] ' : ''}${esc(r._page.location.name)} · ${esc(r._country)}</span>
       ${r.permalink ? `<a class="meta" href="${esc(r.permalink)}" target="_blank">виж във Facebook ↗</a>` : ''}</div>
       ${(r.tags || []).length ? `<div>${r.tags.map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''}
       <div class="txt">${esc(r.text || '(без текст)')}</div>
@@ -263,12 +301,14 @@ document.getElementById('more').onclick = () => { shown += 50; render(); };
 function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); }
 document.getElementById('dlJson').onclick = () => download(`${D.brand}-reviews.json`, JSON.stringify(current.map(({_page, _pi, _date, _ts, _pageReplies, ...r}) => ({page: _page.location.name, ...r})), null, 2), 'application/json');
 document.getElementById('dlCsv').onclick = () => {
-  const head = ['Страница', 'Автор', 'Препоръчва', 'Дата', 'Текст', 'Етикети', 'Реакции', 'Снимки', 'Коментари', 'Отговор от страницата', 'Тип отговор', 'Линк'];
+  const head = ['Държава', 'Страница', 'Автор', 'Препоръчва', 'Дата', 'Текст', 'Етикети', 'Реакции', 'Снимки', 'Коментари', 'Отговор от страницата', 'Тип отговор', 'Линк'];
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const rows = current.map(r => [r._page.location.name, r.reviewer, r.recommends === true ? 'да' : r.recommends === false ? 'не' : '', r.date_full || r.date_text,
+  const rows = current.map(r => [r._country, r._page.location.name, r.reviewer, r.recommends === true ? 'да' : r.recommends === false ? 'не' : '', r.date_full || r.date_text,
     r.text, (r.tags || []).join('; '), r.reactions, r.photos, r.comment_count, (r._pageReplies[0] || {}).text, (r._pageReplies[0] || {}).reply_type, r.permalink].map(q).join(','));
   download(`${D.brand}-reviews.csv`, '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
 };
+renderCountries();
+renderAll();
 render();
 </script>
 </body>

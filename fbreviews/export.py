@@ -25,6 +25,15 @@ SUMMARY_BG = [
     ("reviews_with_hidden_comments", "Ревюта с коментари, които Facebook не показва"),
 ]
 HEADER_FONT = Font(color="FFFFFF", bold=True)
+SENT_BG = {"positive": "положително", "neutral": "неутрално", "negative": "негативно"}
+POL = {"positive": "+", "negative": "−", "neutral": "·"}
+
+
+def _aspects(aspects: list[dict]) -> str:
+    from .insights import TOPICS
+
+    return ", ".join(f"{TOPICS.get(a.get('topic'), a.get('topic'))} {POL.get(a.get('sentiment'), '')}".strip()
+                     for a in aspects or [])
 
 
 def summarize(report: BrandReport) -> dict:
@@ -111,14 +120,33 @@ def write_excel(report: BrandReport, path: Path) -> None:
         for i, rv in enumerate(loc.reviews, 1):
             page = [r for r in rv.replies if r.is_page_reply]
             first = page[0] if page else None
-            rows.append([label(loc), i, rv.reviewer, yn[rv.recommends], rv.rating, rv.text, rv.date_text,
+            rows.append([label(loc), i, rv.reviewer, yn[rv.recommends], rv.rating, rv.text, rv.date_full or rv.date_text,
+                         SENT_BG.get(rv.sentiment, ""), _aspects(rv.aspects), rv.summary or "",
                          rv.permalink, rv.comment_count, len(rv.replies),
                          "да" if rv.replies_unavailable else "", first.text if first else "",
                          first.reply_type if first else "", first.confidence if first else None])
     _sheet(wb, "Ревюта",
-           ["Страница", "№", "Автор", "Препоръчва", "Оценка", "Текст", "Дата", "Линк", "Коментари (по FB)",
-            "Извлечени отговори", "Коментарите са скрити от Facebook", "Отговор от страницата", "Тип отговор", "Увереност"],
-           rows, [28, 5, 22, 11, 8, 60, 12, 40, 10, 10, 12, 60, 13, 10])
+           ["Страница", "№", "Автор", "Препоръчва", "Оценка", "Текст", "Дата", "Тон", "Теми", "Накратко", "Линк",
+            "Коментари (по FB)", "Извлечени отговори", "Коментарите са скрити от Facebook", "Отговор от страницата",
+            "Тип отговор", "Увереност"],
+           rows, [28, 5, 22, 11, 8, 60, 16, 11, 30, 40, 40, 10, 10, 12, 60, 13, 10])
+
+    ins = report.insights or {}
+    if ins.get("pages"):
+        topics = ins.get("topics") or {}
+        names = lambda ks: ", ".join(topics.get(k, k) for k in ks)  # noqa: E731
+        rows = [[("[Бранд] " if p["is_brand"] else "") + p["name"], p["reviews"], p["positive"], p["neutral"],
+                 p["negative"], names(p["top_positive"]), names(p["top_negative"]), p["reply_rate"],
+                 p["negative_reply_rate"], p["negative_unanswered"], p["template_share"], p["reply_delay_days"]]
+                for p in ins["pages"]]
+        _sheet(wb, "Теми и отговаряне",
+               ["Страница", "Ревюта", "Положителни", "Неутрални", "Негативни", "Хвалят (топ теми)",
+                "Оплакват се от (топ теми)", "% с отговор", "% отговорени негативни", "Негативни без отговор",
+                "% шаблонни отговори", "Отговор след (дни, прибл.)"],
+               rows, [34, 9, 11, 10, 10, 30, 30, 10, 12, 12, 12, 12])
+        _sheet(wb, "Сигнали", ["Страница", "Важност", "Какво"],
+               [[s["page"], {"high": "висока", "medium": "средна"}.get(s["level"], s["level"]), s["text"]]
+                for s in ins.get("signals", [])] or [["—", "", "Няма сигнали"]], [34, 10, 80])
 
     rows = []
     for loc in every:

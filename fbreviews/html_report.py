@@ -75,6 +75,9 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .brandcard .row{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--muted);font-size:13px;margin-top:6px}
 .empty{color:var(--muted);padding:16px;text-align:center}
+.sig{border-left:4px solid var(--warn);padding:10px 14px}.sig.high{border-left-color:var(--neg)}.sig b{display:block}
+.tone{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:8px 0}.tone i{display:block;height:100%}
+.summ{color:var(--muted);font-size:12.5px;font-style:italic;margin-top:4px}
 #loctable td:first-child{min-width:230px}
 /* overview */
 .ov{grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr))}
@@ -93,7 +96,7 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
   <div class="wrap topin"><div class="logo"><i>FB</i><span>Facebook ревюта</span></div><nav class="tabs" id="tabs"></nav></div>
   <div class="wrap secnav" id="secnav">
     <a href="#sec-top">Обзор</a><a href="#sec-countries" id="navCountries">Държави</a><a href="#sec-brand">Бранд</a>
-    <a href="#sec-locs">Локации</a><a href="#sec-charts">Графики</a><a href="#sec-reviews">Ревюта</a>
+    <a href="#sec-locs">Локации</a><a href="#sec-topics" id="navTopics">Теми</a><a href="#sec-reply" id="navReply">Отговаряне</a><a href="#sec-charts">Графики</a><a href="#sec-reviews">Ревюта</a>
   </div>
 </header>
 
@@ -120,6 +123,21 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
   <section id="sec-locs"><h2>Локации — сравнение <small id="locHint"></small></h2>
     <div class="card tablewrap"><table id="loctable"></table></div></section>
 
+  <section id="sec-topics"><h2>За какво пишат клиентите <small id="topicsHint"></small></h2>
+    <div class="grid" id="signals" style="margin-bottom:12px"></div>
+    <div class="grid two">
+      <div class="card"><h3>Теми в ревютата</h3><div id="chartTopics"></div>
+        <div class="legend"><span><i style="background:var(--pos)"></i>хвалят</span><span><i style="background:var(--neg)"></i>оплакват се</span></div></div>
+      <div class="card"><h3>Тон на ревютата</h3><div id="toneBox"></div></div>
+    </div>
+    <div class="card tablewrap" style="margin-top:12px"><table id="topicTable"></table></div>
+  </section>
+
+  <section id="sec-reply"><h2>Как отговаря брандът <small>отговори от страницата под ревютата</small></h2>
+    <div class="card tablewrap"><table id="replyTable"></table></div>
+    <div class="small" style="margin-top:6px">Времето за отговор е приблизително: Facebook показва датата на отговора само като „преди 3 д.“ / „1 сед.“; отговорите с дата „1 г.“ не се мерят.</div>
+  </section>
+
   <section id="sec-charts"><h2>Графики</h2>
   <div class="grid two">
     <div class="card"><h3>% препоръка по локации (Facebook)</h3><div id="chartPct"></div></div>
@@ -137,6 +155,8 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
     <select id="fLoc"></select>
     <select id="fVerdict"><option value="">Всички мнения</option><option value="pos">Препоръчва</option><option value="neg">Не препоръчва</option></select>
     <select id="fSort"><option value="new">Най-нови</option><option value="old">Най-стари</option><option value="react">Най-много реакции</option><option value="long">Най-дълги</option></select>
+    <select id="fTone"><option value="">Всеки тон</option><option value="positive">Положителни</option><option value="neutral">Неутрални</option><option value="negative">Негативни</option></select>
+    <select id="fTopic"><option value="">Всички теми</option></select>
     <label class="ck"><input type="checkbox" id="fReply">с отговор от страницата</label>
     <label class="ck"><input type="checkbox" id="fPhoto">със снимки</label>
     <input type="search" id="fText" placeholder="Търсене в текста, автора, етикетите…">
@@ -178,6 +198,9 @@ function methodBg(m) {
   if (!m || m.startsWith('no page replies')) return 'Няма отговори от страницата за класифициране.';
   return 'Метод: ' + m.replace('template clusters', 'шаблонни клъстери').replace('style heuristics', 'стилови сигнали').replace('model judge', 'модел');
 }
+const TOPIC_BG = {food:'храна',service:'обслужване',wait:'чакане',price:'цена',cleanliness:'чистота',staff:'персонал',atmosphere:'атмосфера',delivery:'доставка',availability:'наличност',other:'друго'};
+const TONE_BG = {positive:'положително', neutral:'неутрално', negative:'негативно'};
+const tl = t => TOPIC_BG[t] || t;
 // numbers for one dataset (used by the overview and the tabs)
 function statsOf(D) {
   const locs = D.locations || [], brands = D.brand_sections || [];
@@ -187,7 +210,10 @@ function statsOf(D) {
   const countries = new Set([...brands, ...locs].map(p => p.location && p.location.country).filter(Boolean));
   return {locs: locs.length, brands: brands.length, fb: locs.reduce((a, l) => a + (l.review_total || 0), 0), got: revs.length,
     rec, nrec, share: pct(rec, rec + nrec), avg: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null,
-    replied: revs.filter(r => (r.replies || []).some(x => x.is_page_reply)).length, countries: countries.size};
+    replied: revs.filter(r => (r.replies || []).some(x => x.is_page_reply)).length, countries: countries.size,
+    topNeg: (() => { const c = {}; revs.forEach(r => (r.aspects || []).forEach(a => { if (a.sentiment === 'negative' && a.topic !== 'other') c[a.topic] = (c[a.topic] || 0) + 1; }));
+      return Object.entries(c).sort((a, b) => b[1] - a[1]).map(e => e[0])[0]; })(),
+    signals: ((D.insights || {}).signals || []).length};
 }
 
 /* ---------- one brand ---------- */
@@ -348,19 +374,59 @@ hbars($('chartPct'),
     ${top.length ? '<div class="small">Повтарящи се отговори (шаблони):</div>' + top.map(([k, n]) => `<div class="reply page"><span class="pill gen">${n}×</span>${esc(k)}…</div>`).join('') : ''}
     <div class="small" style="margin-top:8px">${esc(methodBg(D.classification_method || ''))}</div>`;
 })();
+// topics, tone, signals, replying (insights.py)
+(function topics() {
+  const I = D.insights || {}, has = reviews.some(r => r.sentiment);
+  $('sec-topics').hidden = $('navTopics').hidden = !has;
+  $('sec-reply').hidden = $('navReply').hidden = !(I.pages || []).length;
+  if (!has) return;
+  $('topicsHint').textContent = I.method ? 'анализ: ' + I.method.replace('model', 'модел').replace(' for ', ' за ').replace(' of ', ' от ').replace(' reviews, keywords for the rest', ' ревюта, ключови думи за останалите').replace('keywords and Facebook tags (no model)', 'ключови думи и етикетите на Facebook (без модел)') : '';
+  const byUrl = {}; pages.forEach(p => byUrl[p.location.url] = p);
+  const pageOk = u => !byUrl[u] || inC(byUrl[u]);
+  $('signals').innerHTML = (I.signals || []).filter(s => { const p = pages.find(x => x.location.name === s.page); return !p || inC(p); })
+    .map(s => `<div class="card sig ${s.level}"><b>${esc(s.page)}</b>${esc(s.text)}</div>`).join('');
+  const t = {}; reviews.forEach(r => (r.aspects || []).forEach(a => { t[a.topic] = t[a.topic] || {p: 0, n: 0};
+    if (a.sentiment === 'positive') t[a.topic].p++; else if (a.sentiment === 'negative') t[a.topic].n++; }));
+  const items = Object.entries(t).map(([k, v]) => ({label: tl(k), a: v.p, b: v.n, text: `+${v.p} / −${v.n}`})).filter(i => i.a + i.b).sort((x, y) => (y.a + y.b) - (x.a + x.b));
+  hbars($('chartTopics'), items, Math.max(1, ...items.map(i => i.a + i.b)), '--pos', '--neg');
+  const n = {positive: 0, neutral: 0, negative: 0}; reviews.forEach(r => { if (n[r.sentiment] != null) n[r.sentiment]++; });
+  const tot = n.positive + n.neutral + n.negative || 1;
+  $('toneBox').innerHTML = `<div class="tone"><i style="width:${100 * n.positive / tot}%;background:var(--pos)"></i><i style="width:${100 * n.neutral / tot}%;background:var(--muted)"></i><i style="width:${100 * n.negative / tot}%;background:var(--neg)"></i></div>
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)">${['positive', 'neutral', 'negative'].map(k => `<div class="kpi"><div class="v">${pct(n[k], tot)}%</div><div class="l">${TONE_BG[k]} · ${n[k]}</div></div>`).join('')}</div>
+    <p class="small">Тонът е от текста на ревюто (не само от „препоръчва / не препоръчва“): ревю с „препоръчва“ може да е неутрално, ако текстът има оплаквания.</p>`;
+  const P = (I.pages || []).filter(p => pageOk(p.url));
+  const pills = (ks, cls, d) => ks.length ? ks.map(k => `<span class="pill ${cls}">${esc(tl(k))} ${d[k]}</span>`).join('') : '—';
+  $('topicTable').innerHTML = `<thead><tr><th>Страница</th><th class="n">Ревюта</th><th>Тон</th><th>Хвалят</th><th>Оплакват се от</th></tr></thead><tbody>${P.map(p => {
+    const T = p.positive + p.neutral + p.negative || 1;
+    return `<tr><td><b>${p.is_brand ? '[Бранд] ' : ''}${esc(p.name)}</b></td><td class="n">${p.reviews}</td>
+    <td style="min-width:140px"><div class="tone" style="margin:4px 0"><i style="width:${100 * p.positive / T}%;background:var(--pos)"></i><i style="width:${100 * p.neutral / T}%;background:var(--muted)"></i><i style="width:${100 * p.negative / T}%;background:var(--neg)"></i></div><span class="small">${pct(p.negative, T)}% негативни</span></td>
+    <td>${pills(p.top_positive, 'pos', p.topics_positive)}</td><td>${pills(p.top_negative, 'neg', p.topics_negative)}</td></tr>`; }).join('')}</tbody>`;
+  const v = (x, s = '%') => x == null ? '—' : x + s;
+  $('replyTable').innerHTML = `<thead><tr><th>Страница</th><th class="n">Ревюта</th><th>С отговор</th><th>Отговорени негативни</th><th class="n">Негативни без отговор</th><th class="n">Шаблонни отговори</th><th class="n">Отговор след (дни)</th></tr></thead><tbody>${P.map(p => `<tr>
+    <td><b>${p.is_brand ? '[Бранд] ' : ''}${esc(p.name)}</b></td><td class="n">${p.reviews}</td>
+    <td>${p.reply_rate == null ? '—' : `<div class="barrow"><div class="bar"><i style="width:${p.reply_rate}%;background:var(--accent)"></i></div>${p.reply_rate}%</div>`}</td>
+    <td>${p.negative_reply_rate == null ? '—' : `<div class="barrow"><div class="bar"><i style="width:${p.negative_reply_rate}%;background:var(--accent)"></i></div>${p.negative_reply_rate}%</div>`}</td>
+    <td class="n">${p.negative_unanswered ? `<span class="pill neg">${p.negative_unanswered}</span>` : '0'}</td><td class="n">${v(p.template_share)}</td>
+    <td class="n">${p.reply_delay_days == null ? '—' : `~${p.reply_delay_days}<span class="small"> (${p.reply_delay_measured})</span>`}</td></tr>`).join('')}</tbody>`;
+})();
 }  // end renderAll
 
 // reviews explorer
 const fLoc = $('fLoc');
 fLoc.innerHTML = '<option value="">Всички страници</option>' + pages.map((p, i) => `<option value="${i}">${p._brand ? '[Бранд] ' : ''}${esc(p.location.name)} · ${esc(countryOf(p))} (${(p.reviews || []).length})</option>`).join('');
-['fVerdict', 'fSort', 'fText'].forEach(id => $(id).value = $(id).tagName === 'SELECT' ? $(id).options[0].value : '');
+const usedTopics = [...new Set(ALL_REVIEWS.flatMap(r => (r.aspects || []).map(a => a.topic)))];
+$('fTopic').innerHTML = '<option value="">Всички теми</option>' + usedTopics.map(t => `<option value="${t}:negative">оплакване: ${esc(tl(t))}</option><option value="${t}:positive">похвала: ${esc(tl(t))}</option><option value="${t}:">${esc(tl(t))} (всички)</option>`).join('');
+$('fTopic').hidden = !usedTopics.length; $('fTone').hidden = !ALL_REVIEWS.some(r => r.sentiment);
+['fVerdict', 'fSort', 'fText', 'fTone', 'fTopic'].forEach(id => $(id).value = $(id).tagName === 'SELECT' ? $(id).options[0].value : '');
 $('fReply').checked = $('fPhoto').checked = false;
 function filtered() {
   const loc = fLoc.value, v = $('fVerdict').value, q = $('fText').value.trim().toLowerCase();
   const onlyReply = $('fReply').checked, onlyPhoto = $('fPhoto').checked, s = $('fSort').value;
+  const tone = $('fTone').value, [tt, tp] = ($('fTopic').value || ':').split(':');
   const out = ALL_REVIEWS.filter(r => (!selCountry || r._country === selCountry) && (loc === '' || r._pi === +loc) && (!v || (v === 'pos' ? r.recommends === true : r.recommends === false))
-    && (!onlyReply || r._pageReplies.length) && (!onlyPhoto || r.photos > 0)
-    && (!q || [r.text, r.reviewer, (r.tags || []).join(' '), (r.replies || []).map(x => x.text).join(' ')].join(' ').toLowerCase().includes(q)));
+    && (!onlyReply || r._pageReplies.length) && (!onlyPhoto || r.photos > 0) && (!tone || r.sentiment === tone)
+    && (!tt || (r.aspects || []).some(a => a.topic === tt && (!tp || a.sentiment === tp)))
+    && (!q || [r.text, r.reviewer, r.summary, (r.tags || []).join(' '), (r.replies || []).map(x => x.text).join(' ')].join(' ').toLowerCase().includes(q)));
   const by = {new: (a, b) => b._ts - a._ts, old: (a, b) => a._ts - b._ts, react: (a, b) => (b.reactions || 0) - (a.reactions || 0), long: (a, b) => (b.text || '').length - (a.text || '').length};
   return out.sort(by[s]);
 }
@@ -380,6 +446,8 @@ function render() {
       ${r.recommends === true ? '<span class="pill pos">препоръчва</span>' : r.recommends === false ? '<span class="pill neg">не препоръчва</span>' : ''}
       <div class="meta">${esc(r.date_full || r.date_text || '')} · ${r._page._brand ? '[Бранд] ' : ''}${esc(r._page.location.name)} · ${esc(r._country)}
       ${r.permalink ? ` · <a href="${esc(r.permalink)}" target="_blank">виж във Facebook ↗</a>` : ''}</div></div></div>
+      ${(r.aspects || []).length || r.sentiment ? `<div style="margin-top:6px">${r.sentiment ? `<span class="pill ${r.sentiment === 'positive' ? 'pos' : r.sentiment === 'negative' ? 'neg' : ''}">тон: ${TONE_BG[r.sentiment]}</span>` : ''}${(r.aspects || []).map(a => `<span class="pill ${a.sentiment === 'positive' ? 'pos' : a.sentiment === 'negative' ? 'neg' : ''}">${esc(tl(a.topic))} ${a.sentiment === 'positive' ? '+' : a.sentiment === 'negative' ? '−' : ''}</span>`).join('')}</div>` : ''}
+      ${r.summary ? `<div class="summ">„${esc(r.summary)}“</div>` : ''}
       ${(r.tags || []).length ? `<div style="margin-top:6px">${r.tags.map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''}
       <div class="txt">${esc(r.text || '(без текст)')}</div>
       <div class="small">${r.reactions ? '👍 ' + r.reactions + ' · ' : ''}${r.photos ? '📷 ' + r.photos + ' · ' : ''}${r.comment_count ? '💬 ' + r.comment_count + ' коментара' : ''}${r.replies_unavailable ? ' (Facebook не показва текста им)' : ''}</div>
@@ -387,16 +455,16 @@ function render() {
     </div>`).join('') || '<div class="card empty">Няма ревюта по тези филтри.</div>';
   $('more').style.display = current.length > shown ? '' : 'none';
 }
-['fLoc', 'fVerdict', 'fSort', 'fReply', 'fPhoto'].forEach(id => $(id).onchange = () => { shown = 50; render(); });
+['fLoc', 'fVerdict', 'fSort', 'fReply', 'fPhoto', 'fTone', 'fTopic'].forEach(id => $(id).onchange = () => { shown = 50; render(); });
 $('fText').oninput = () => { shown = 50; render(); };
 $('more').onclick = () => { shown += 50; render(); };
 function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); }
 $('dlJson').onclick = () => download(`${D.brand}-reviews.json`, JSON.stringify(current.map(({_page, _pi, _date, _ts, _pageReplies, ...r}) => ({page: _page.location.name, ...r})), null, 2), 'application/json');
 $('dlCsv').onclick = () => {
-  const head = ['Държава', 'Страница', 'Автор', 'Препоръчва', 'Дата', 'Текст', 'Етикети', 'Реакции', 'Снимки', 'Коментари', 'Отговор от страницата', 'Тип отговор', 'Линк'];
+  const head = ['Държава', 'Страница', 'Автор', 'Препоръчва', 'Дата', 'Текст', 'Тон', 'Теми', 'Накратко', 'Етикети', 'Реакции', 'Снимки', 'Коментари', 'Отговор от страницата', 'Тип отговор', 'Линк'];
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const rows = current.map(r => [r._country, r._page.location.name, r.reviewer, r.recommends === true ? 'да' : r.recommends === false ? 'не' : '', r.date_full || r.date_text,
-    r.text, (r.tags || []).join('; '), r.reactions, r.photos, r.comment_count, (r._pageReplies[0] || {}).text, (r._pageReplies[0] || {}).reply_type, r.permalink].map(q).join(','));
+    r.text, TONE_BG[r.sentiment] || '', (r.aspects || []).map(a => tl(a.topic) + (a.sentiment === 'positive' ? ' +' : a.sentiment === 'negative' ? ' −' : '')).join('; '), r.summary || '', (r.tags || []).join('; '), r.reactions, r.photos, r.comment_count, (r._pageReplies[0] || {}).text, (r._pageReplies[0] || {}).reply_type, r.permalink].map(q).join(','));
   download(`${D.brand}-reviews.csv`, '﻿' + [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
 };
 renderCountries();
@@ -415,7 +483,8 @@ function overview() {
       ${st.share != null ? `<div class="ring" style="--p:${st.share}" title="препоръчват (извлечени)"><span>${st.share}%</span></div>` : ''}</div>
     <div class="nums"><div><b>${st.locs}</b><span>локации</span></div><div><b>${fmt(st.fb)}</b><span>ревюта във FB</span></div><div><b>${fmt(st.got)}</b><span>извлечени</span></div></div>
     <div><span class="pill">${st.brands} стр. на бранда</span>${st.countries ? `<span class="pill">${st.countries} ${st.countries === 1 ? 'държава' : 'държави'}</span>` : ''}
-      <span class="pill man">${st.got ? pct(st.replied, st.got) : 0}% с отговор</span>${st.nrec ? `<span class="pill neg">${st.nrec} не препоръчват</span>` : ''}</div></div>`).join('')
+      <span class="pill man">${st.got ? pct(st.replied, st.got) : 0}% с отговор</span>${st.nrec ? `<span class="pill neg">${st.nrec} не препоръчват</span>` : ''}
+      ${st.topNeg ? `<span class="pill neg">оплакват се най-вече от: ${esc(tl(st.topNeg))}</span>` : ''}${st.signals ? `<span class="pill gen">⚠ ${st.signals} сигнала</span>` : ''}</div></div>`).join('')
     || '<div class="card empty">Още няма извлечени брандове.</div>';
   document.querySelectorAll('.ovc').forEach(c => c.onclick = () => go(c.dataset.k));
   $('ovTable').innerHTML = `<thead><tr><th>Бранд</th><th>Обновено</th><th class="n">Държави</th><th class="n">Стр. на бранда</th><th class="n">Локации</th><th class="n">Ревюта във FB</th>

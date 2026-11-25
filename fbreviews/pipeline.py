@@ -172,10 +172,18 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
         llm = {"base_url": s.llm_base_url, "api_key": s.llm_api_key, "model": s.classifier_model}
     # brand Pages and locations are classified together: a template reply shared by both is one template
     method = await classify_replies(brand_results + results, brand, llm=llm)
+    from .insights import analyze_reviews, build_insights
+
+    try:  # what the reviews say (topics / tone): from the text only; never let it break the report
+        imethod = await analyze_reviews(brand_results + results, llm=llm, cache_path=run_dir / "insights_cache.json")
+        insights = build_insights(brand_results, results, imethod)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("insights failed: %s", e)
+        insights = {}
     meta = json.loads((run_dir / "meta.json").read_text()) if (run_dir / "meta.json").exists() else {}
     brand_urls = [r.location.url for r in brand_results]
     report = BrandReport(brand=brand, model=s.llm_model, locations=results, brand_sections=brand_results,
-                         classification_method=method,
+                         classification_method=method, insights=insights,
                          brand_pages=sorted(set(meta.get("brand_pages", [])) | set(brand_urls)))
     report.summary = summarize(report)
     write_json(report, run_dir / "report.json")

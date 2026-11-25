@@ -137,3 +137,21 @@ def test_dedupe_pages_same_url():
     assert [l.location.name for l in out] == ["Chain Sofia", "Chain Varna", "Own"]
     assert [l.status for l in out] == ["no_own_page", "no_own_page", "ok"]
     assert out[0].reviews == [] and out[0].review_total is None and out[2].reviews == rv
+
+
+def test_insights_without_model(tmp_path):
+    from fbreviews.insights import analyze_reviews, build_insights
+    revs = [Review(reviewer="A", recommends=False, text="Чакахме 50 минути, сервитьорът беше груб.", date_full="1 ноември 2026 г.",
+                   replies=[Reply(author="Zara Mall Sofia", text="Съжаляваме!", is_page_reply=True, date_text="3 д.")]),
+            Review(reviewer="B", recommends=True, text="Много вкусна храна, страхотна атмосфера!", date_full="2 ноември 2026 г."),
+            Review(reviewer="C", recommends=False, text="Студена храна и бавно обслужване.", date_full="3 ноември 2026 г.")]
+    loc = LocationResult(location=LocationPage(name="Zara Mall Sofia", url="https://www.facebook.com/z"), status="ok",
+                         reviews=revs, scraped_at="2026-11-10T10:00:00+00:00")
+    method = asyncio.run(analyze_reviews([loc], llm=None, cache_path=tmp_path / "c.json"))
+    assert "no model" in method and (tmp_path / "c.json").exists()
+    assert [r.sentiment for r in revs] == ["negative", "positive", "negative"]
+    assert {"wait", "staff"} <= {a["topic"] for a in revs[0].aspects}
+    ins = build_insights([], [loc], method)
+    p = ins["pages"][0]
+    assert p["negative"] == 2 and p["negative_reply_rate"] == 50 and p["negative_unanswered"] == 1
+    assert p["reply_delay_days"] is not None and "food" in p["topics_positive"]

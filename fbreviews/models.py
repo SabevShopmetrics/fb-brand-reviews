@@ -82,6 +82,10 @@ class Review(BaseModel):
     photos: int = 0
     replies_unavailable: bool = False  # Facebook showed a comment count but did not load the thread
     replies: list[Reply] = Field(default_factory=list)
+    # filled by insights.analyze_reviews (from the text; no Facebook visit)
+    sentiment: Literal["positive", "neutral", "negative"] | None = None
+    aspects: list[dict] = Field(default_factory=list)  # [{"topic": "wait", "sentiment": "negative"}]
+    summary: str | None = None
 
 
 class LocationResult(BaseModel):
@@ -125,3 +129,4 @@ class BrandReport(BaseModel):
     locations: list[LocationResult] = Field(default_factory=list)
     summary: dict = Field(default_factory=dict)
     classification_method: str = ""
+    insights: dict = Field(default_factory=dict)  # insights.build_insights: per Page topics / replying, signals

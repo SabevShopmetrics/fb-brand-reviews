@@ -73,6 +73,9 @@ It prints RUNNING / FINISHED and "какво прави": the tool's own step-by
   (statistics, charts, brand Pages, locations comparison, every review with text, tags, reactions, photos, replies;
   filters, search, CSV/JSON download). Also give the paths of `report.xlsx` (Excel) and `report.json` (all data),
   and mention the all-brands dashboard `output/index.html` (tabs for every brand extracted so far).
+- `report.json` also has `insights`: per Page the tone counts, `top_positive` / `top_negative` topics, reply rates,
+  negative reviews without an answer, and `signals` (a location getting worse, a topic that spikes). Say the signals
+  first if there are any, and for each location what customers praise and what they complain about.
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.

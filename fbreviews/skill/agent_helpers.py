@@ -489,9 +489,13 @@ def _collect(opts, reset=False):
     except Exception:
         here = ""
     cache = _read(f"cache/{fb_slug(here)}.json", {}) if here else {}
-    if cache.get("reviews") and time.time() - cache.get("at", 0) < COLLECT_CACHE_S and not reset:
-        _say(f"  използвам току-що извлечените {len(cache['reviews'])} ревюта (без ново скролване)")
-        return cache["reviews"], cache.get("diag", {})
+    want = int(opts.get("maxReviews") or 100000)
+    cached = cache.get("reviews") or []
+    complete = (cache.get("diag") or {}).get("scroll_reason") in ("reached_total", "no_more")
+    # reuse only what covers this request: the preflight's 60 do not stand in for "all", and never return more than asked
+    if cached and time.time() - cache.get("at", 0) < COLLECT_CACHE_S and not reset and (len(cached) >= want or complete):
+        _say(f"  използвам току-що извлечените ревюта: {min(len(cached), want)} (без ново скролване)")
+        return cached[:want], cache.get("diag", {})
     reviews, diag = _collect_live(opts, reset)
     if here and reviews:
         _write(f"cache/{fb_slug(here)}.json", {"at": time.time(), "reviews": reviews, "diag": diag})
@@ -552,6 +556,29 @@ def fb_save_result(location, result, notes="", folder="results"):
     """Save one finished location (call it for EVERY location, also for no_reviews / errors)."""
     loc = dict(location if isinstance(location, dict) else {"url": str(location)})
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
+    if folder == "results":  # one Page = one set of reviews: a store with the brand's / another store's Page has none
+        owner = next((b for b in fb_brand_pages() if fb_page_url(b.get("url", "")) == url), None)
+        if owner and (loc.get("name") or "").strip().lower() == (owner.get("name") or "").strip().lower():
+            _say(f"  {owner.get('name')} е страницата на бранда — тя е в раздела „Бранд“, не като локация")
+            return {"saved": None, "status": "is_brand_page", "reviews": 0}
+        other = None
+        for p in sorted((_WS / "results").glob("*.json")) if (_WS / "results").exists() else []:
+            d = _read(f"results/{p.name}", {})
+            dl = (d.get("location") if isinstance(d, dict) else None) or {}
+            if not isinstance(dl, dict):
+                continue
+            if not p.stem.startswith("_") and fb_page_url(dl.get("url", "")) == url and dl.get("name") != loc.get("name"):
+                other = dl.get("name")
+                break
+        if owner or other:
+            import hashlib
+            who = f"на бранда „{owner.get('name')}“" if owner else f"на „{other}“"
+            key = fb_slug(url) + "--" + hashlib.md5((loc.get("name") or "").encode()).hexdigest()[:8]
+            _write(f"results/{key}.json", {"location": {**loc, "url": url}, "status": "no_own_page", "reviews": [],
+                                           "review_total": None,
+                                           "notes": f"няма собствена Facebook страница — ревютата са в страницата {who}"})
+            _say(f"✓ Записах обекта {loc.get('name')}: без своя страница (ревютата са в страницата {who})")
+            return {"saved": f"results/{key}.json", "status": "no_own_page", "reviews": 0}
     for k, v in ((result.get("diagnostics") or {}).get("page") or {}).items():
         if v and not loc.get(k) and k != "name":
             loc[k] = v

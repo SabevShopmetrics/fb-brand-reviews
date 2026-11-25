@@ -40,6 +40,8 @@ category, address) and, when unsure, open the Page once and look for the brand's
 **Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
 never repeat a query. Then go on: extracting is the goal, not searching. If 6 searches find no location Page at all, the brand has no Page per location (common for a chain with one Page): searching closes by itself (`search_closed`); do Phase 1b (the brand Page) and finish. Never search other countries for a brand that clearly operates in one country only.
 
+**A store without its own Page** (the chain has one Page for all its restaurants): never give it the brand Page's URL as a location to extract. Record it once, with no reviews: `fb_save_result({'name': ..., 'address': ..., 'city': ..., 'url': <brand Page url>}, {'status': 'no_reviews'})` — it is saved as `no_own_page` and listed in the report without counting the brand's reviews again.
+
 ## Phase 1b — the brand's own Pages (a separate section of the report)
 The official brand Pages (e.g. "Lidl", "Lidl България") are not locations, but they are reported on their own.
 Find them on the brand's website (its Facebook link) or with `fb_web_search(f'{brand} official facebook')`, then:

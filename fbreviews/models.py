@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ReplyType = Literal["generated", "manual", "uncertain", "not_page_reply"]
-LocationStatus = Literal["ok", "partial", "summary_only", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"]
+LocationStatus = Literal["ok", "partial", "summary_only", "no_own_page", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"]
 
 
 def now_iso() -> str:

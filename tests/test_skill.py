@@ -421,3 +421,26 @@ def test_search_closes_when_no_location_found(tmp_path):
         assert isinstance(m.fb_search_pages(f"Щастливеца {i}", scrolls=1), list)
     r = m.fb_search_pages("Щастливеца Румъния", scrolls=1)
     assert isinstance(r, dict) and r["error"] == "search_closed" and "brand_todo" in r["message"] and len(loads) == 6
+
+
+def test_store_without_own_page_and_cache_limit(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    brand = "https://www.facebook.com/shtastlivecarestaurants"
+    m.fb_add_brand_pages([{"name": "Щастливеца", "url": brand, "scope": "global"}])
+    revs = {"status": "ok", "reviews": [{"reviewer": "A", "text": "x"}]}
+    assert m.fb_save_result({"name": "Щастливеца", "url": brand}, revs)["status"] == "is_brand_page"
+    a = m.fb_save_result({"name": "Щастливеца Витоша", "url": brand}, revs)
+    b = m.fb_save_result({"name": "Щастливеца Стара Загора", "url": brand}, revs)
+    assert a["status"] == b["status"] == "no_own_page" and a["saved"] != b["saved"] and a["reviews"] == 0
+
+    class H:
+        def js(self, expr):
+            return "https://www.facebook.com/somepage/reviews" if expr == "location.href" else None
+    m._h = lambda: H()
+    sixty = [{"reviewer": str(i)} for i in range(60)]
+    m._write("cache/somepage.json", {"at": m.time.time(), "reviews": sixty, "diag": {"scroll_reason": "reached_max"}})
+    r, _ = m._collect({"maxReviews": 20})
+    assert len(r) == 20                                   # never more than asked
+    m._collect_live = lambda opts, reset=False: ([{"reviewer": "live"}], {})
+    r, _ = m._collect({"maxReviews": 100000})
+    assert r == [{"reviewer": "live"}]                    # the preflight's 60 do not stand in for "all"

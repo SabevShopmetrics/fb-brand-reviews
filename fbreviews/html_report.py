@@ -154,7 +154,7 @@ const BOOT = JSON.parse(document.getElementById('data').textContent);
 const SETS = BOOT.datasets || [];
 const INDEX = BOOT.mode === 'index';
 const $ = id => document.getElementById(id);
-const STATUS = {ok:'готово',partial:'частично',summary_only:'само публични данни',no_reviews:'няма ревюта',reviews_disabled:'ревютата са изключени',not_found:'не е намерена',error:'грешка',login_required:'иска вход',blocked:'блокирано',pending:'чака'};
+const STATUS = {ok:'готово',partial:'частично',summary_only:'само публични данни',no_own_page:'без своя страница',no_reviews:'няма ревюта',reviews_disabled:'ревютата са изключени',not_found:'не е намерена',error:'грешка',login_required:'иска вход',blocked:'блокирано',pending:'чака'};
 const MONTHS = {'януари':1,'февруари':2,'март':3,'април':4,'май':5,'юни':6,'юли':7,'август':8,'септември':9,'октомври':10,'ноември':11,'декември':12,
   january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

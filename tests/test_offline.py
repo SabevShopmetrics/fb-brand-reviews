@@ -123,3 +123,17 @@ def test_dashboard_index(tmp_path):
     assert [s["key"] for s in sets] == ["zara"] and sets[0]["run"] == new.name and len(sets[0]["runs"]) == 2
     html = write_index(tmp_path).read_text()
     assert '"mode": "index"' in html and "Zara Mall Sofia" in html
+
+
+def test_dedupe_pages_same_url():
+    from fbreviews.pipeline import dedupe_pages
+    url = "https://www.facebook.com/chain"
+    rv = [Review(reviewer="A", text="x")]
+    brand = [LocationResult(location=LocationPage(name="Chain", url=url), status="ok", reviews=rv, review_total=50)]
+    locs = [LocationResult(location=LocationPage(name=n, url=url), status="ok", reviews=rv, review_total=50)
+            for n in ("Chain", "Chain Sofia", "Chain Varna")]
+    locs.append(LocationResult(location=LocationPage(name="Own", url="https://www.facebook.com/own"), status="ok", reviews=rv))
+    out = dedupe_pages(brand, locs)
+    assert [l.location.name for l in out] == ["Chain Sofia", "Chain Varna", "Own"]
+    assert [l.status for l in out] == ["no_own_page", "no_own_page", "ok"]
+    assert out[0].reviews == [] and out[0].review_total is None and out[2].reviews == rv

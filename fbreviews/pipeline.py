@@ -68,7 +68,7 @@ def to_reviews(raw: list) -> list[Review]:
     return out
 
 
-STATUSES = {"ok", "partial", "summary_only", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"}
+STATUSES = {"ok", "partial", "summary_only", "no_own_page", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"}
 
 
 def promote_partials(ws: Path) -> None:
@@ -141,9 +141,32 @@ def progress_of(run_dir: Path) -> dict:
     return {"locations": len(locs), "done": done, "stopped": stop}
 
 
+def dedupe_pages(brand_results: list[LocationResult], results: list[LocationResult]) -> list[LocationResult]:
+    """One Facebook Page = one set of reviews. A store without a Page of its own (the agent gave it the brand Page's
+    URL, or another store's) is kept as "no_own_page" with no reviews, so nothing is counted twice; a "location"
+    that IS a brand Page (same URL and name) is dropped — it is already in the brand section."""
+    brand = {normalize_page_url(b.location.url) or b.location.url: b for b in brand_results}
+    seen: dict[str, str] = {}
+    out = []
+    for r in results:
+        url = normalize_page_url(r.location.url) or r.location.url
+        owner = brand.get(url)
+        if owner and r.location.name.strip().lower() == owner.location.name.strip().lower():
+            continue
+        if owner or url in seen:
+            who = f"на бранда „{owner.location.name}“" if owner else f"на „{seen[url]}“"
+            r = r.model_copy(update={
+                "status": "no_own_page", "reviews": [], "review_total": None, "recommend_pct": None,
+                "notes": f"няма собствена Facebook страница — ревютата са в страницата {who}"})
+        else:
+            seen[url] = r.location.name
+        out.append(r)
+    return out
+
+
 async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True) -> BrandReport:
-    results = load_results(run_dir)
     brand_results = load_results(run_dir, "brand")
+    results = dedupe_pages(brand_results, load_results(run_dir))
     llm = None
     if use_llm and s.llm_base_url and s.classifier_model:
         llm = {"base_url": s.llm_base_url, "api_key": s.llm_api_key, "model": s.classifier_model}

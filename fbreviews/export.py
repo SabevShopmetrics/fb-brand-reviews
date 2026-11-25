@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 from .models import BrandReport
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3A5F")
-STATUS_BG = {"ok": "готово", "partial": "частично", "summary_only": "само публични данни", "no_reviews": "няма ревюта",
+STATUS_BG = {"ok": "готово", "partial": "частично", "summary_only": "само публични данни", "no_own_page": "без своя страница", "no_reviews": "няма ревюта",
              "reviews_disabled": "ревютата са изключени", "not_found": "не е намерена", "error": "грешка",
              "login_required": "иска вход", "blocked": "блокирано"}
 SUMMARY_BG = [

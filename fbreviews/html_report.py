@@ -201,6 +201,21 @@ function methodBg(m) {
 const TOPIC_BG = {food:'храна',service:'обслужване',wait:'чакане',price:'цена',cleanliness:'чистота',staff:'персонал',atmosphere:'атмосфера',delivery:'доставка',availability:'наличност',other:'друго'};
 const TONE_BG = {positive:'положително', neutral:'неутрално', negative:'негативно'};
 const tl = t => TOPIC_BG[t] || t;
+// profile+ of a Page: badge, likes, "replies within …", other networks, transparency (created, name changes, ads)
+function profileRow(L, small) {
+  const net = u => { const m = (u || '').match(/(instagram|tiktok|youtube|youtu\.be|x\.com|twitter|linkedin|pinterest)/i); return m ? m[1].replace('youtu.be', 'youtube').replace('x.com', 'X') : 'линк'; };
+  const bits = [
+    !small && L.verified ? '<span class="pill pos">✔ синя отметка</span>' : '',
+    L.response_badge ? `<span class="pill man">${esc(L.response_badge)}</span>` : '',
+    small && L.likes ? `<span class="pill">${esc(L.likes)} харесвания</span>` : '',
+    ...(L.socials && L.socials.length ? L.socials : (L.instagram ? [L.instagram] : [])).map(u => `<a class="pill" href="${esc(u)}" target="_blank">${esc(net(u))} ↗</a>`),
+    L.created ? `<span class="pill">създадена ${esc(L.created)}</span>` : '',
+    (L.name_changes || []).length ? `<span class="pill gen" title="${esc(L.name_changes.join(' · '))}">${L.name_changes.length} смени на името</span>` : '',
+    L.ads_running === true ? '<span class="pill gen">пуска реклами</span>' : L.ads_running === false ? '<span class="pill">без активни реклами</span>' : '',
+    L.admin_countries ? `<span class="pill">управлявана от: ${esc(L.admin_countries)}</span>` : '',
+  ].filter(Boolean);
+  return bits.length ? `<div class="row" style="margin-top:4px">${bits.join('')}</div>` : '';
+}
 // numbers for one dataset (used by the overview and the tabs)
 function statsOf(D) {
   const locs = D.locations || [], brands = D.brand_sections || [];
@@ -292,7 +307,8 @@ $('brands').innerHTML = (D.brand_sections || []).filter(b => inC({...b, _brand: 
   return `<div class="card brandcard"><div style="display:flex;gap:12px;align-items:center">
   ${b.recommend_pct != null ? `<div class="ring" style="--p:${b.recommend_pct}"><span>${b.recommend_pct}%</span></div>` : ''}
   <div><h3 style="margin:0"><a href="${esc(L.url)}" target="_blank">${esc(L.name)}</a></h3><span class="pill">${esc(countryOf({...b, _brand: true}))}</span><span class="pill">${STATUS[b.status] || esc(b.status)}</span></div></div>
-  <div class="row">${[L.category, L.price, L.followers && L.followers + ' последователи', L.website, L.phone, L.email, L.address].filter(Boolean).map(esc).join(' · ')}</div>
+  <div class="row">${[L.category, L.price, L.followers && L.followers + ' последователи', L.likes && L.likes + ' харесвания', L.website, L.phone, L.email, L.address, L.hours].filter(Boolean).map(esc).join(' · ')}</div>
+  ${profileRow(L)}
   <div class="row"><span>${b.recommend_pct != null ? `<b>${b.recommend_pct}%</b> препоръка` : 'без препоръки на страницата'}</span>
   <span>${b.review_total != null ? fmt(b.review_total) + ' ревюта във FB' : ''}</span><span>${(b.reviews||[]).length ? (b.reviews.length + ' извлечени') : ''}</span></div></div>`; }).join('')
   || '<div class="card empty">Не е намерена официална страница на бранда.</div>';
@@ -300,7 +316,7 @@ $('brands').innerHTML = (D.brand_sections || []).filter(b => inC({...b, _brand: 
 // locations table
 $('locHint').textContent = 'кликнете заглавие, за да сортирате';
 const cols = [
-  ['Локация', l => l.location.name, (l, v) => `<a href="${esc(l.location.url)}" target="_blank"><b>${esc(v)}</b></a><div class="small">${esc([l.location.category, l.location.address].filter(Boolean).join(' · '))}</div>`],
+  ['Локация', l => l.location.name, (l, v) => `<a href="${esc(l.location.url)}" target="_blank"><b>${esc(v)}</b></a>${l.location.verified ? ' <span title="синя отметка">✔</span>' : ''}<div class="small">${esc([l.location.category, l.location.address].filter(Boolean).join(' · '))}</div>${profileRow(l.location, true)}`],
   ['Държава', l => countryOf(l), (l, v) => esc(v)],
   ['Град', l => l.location.city || '', (l, v) => esc(v) || '—'],
   ['Статус', l => STATUS[l.status] || l.status, (l, v) => `<span class="pill">${esc(v)}</span>`],

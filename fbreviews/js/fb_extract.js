@@ -536,7 +536,7 @@ window.__fbx = (function () {
     var body = lines.join('\n');
     var LABEL = /^(log in|forgot account\?|влизане|забравен профил\?|въведение|още|more|всички|all|информация|about|последователи|followers|снимки|photos|споменавания|mentions|публикации|posts|видеоклипове|videos|reels|събития|events|следване|follow|търсене|search|обадете се сега|call now|съобщение|message|харесване|like|подробности|details|intro|представяне|връзки|links|препоръчани|featured|филтри|filters)$/i;
     var h1 = Array.prototype.filter.call(document.querySelectorAll('h1'), function (h) { return !h.closest('[role="dialog"]'); })[0];
-    var name = h1 ? txt(h1).replace(/\s+/g, ' ').trim() : null;
+    var name = h1 ? txt(h1).replace(/\s+/g, ' ').replace(/[\s✓✔]+$/, '').trim() : null;
     if (!name) name = lines.filter(function (l) { return !LABEL.test(l); })[0] || null;
     if (!name || /^(известия|notifications|facebook)$/i.test(name))
       name = document.title.replace(/^\(\d+\)\s*/, '').replace(/\s*\|\s*Facebook.*$/, '').trim() || null;
@@ -556,7 +556,9 @@ window.__fbx = (function () {
         var pm = cand.match(/^[·\s]*(\${1,4})\s*$/);
         if (pm) { price = pm[1]; continue; }
         if (!cand.replace(/[·\s]/g, '')) continue;
-        if (cand.length < 50 && !/\d|%/.test(cand) && !LABEL.test(cand) && cand !== name) { category = cand.replace(/\s*·.*$/, ''); catIdx = k; }
+        if (cand.length < 50 && !/\d|%/.test(cand) && !LABEL.test(cand) && cand !== name) {
+          var pr = cand.match(/·\s*(\${1,4})\s*$/); if (pr && !price) price = pr[1];
+          category = cand.replace(/\s*·.*$/, ''); catIdx = k; }
         break;
       }
     }
@@ -583,15 +585,72 @@ window.__fbx = (function () {
       var t = txt(art);
       first = { header: (t.split('\n')[0] || '').slice(0, 200), recommends: F.re.NEG.test(t.slice(0, 300)) ? false : (F.re.POS.test(t.slice(0, 300)) ? true : null), text: t.slice(0, 600) };
     }
+    // profile+: likes, blue badge, "typically replies within …", links to the brand's other networks
+    var likes = body.match(/([\d.,]+\s*(хил\.|млн\.|[KkMm])?)\s*(харесвания|харесване|likes|like)(?![a-zа-я])/i);
+    var badge = false;
+    if (h1) {
+      var hb = h1.parentElement || h1;
+      badge = !!(h1.querySelector('[aria-label*="erified" i], [aria-label*="отвърден" i], [title*="erified" i]') ||
+                 hb.querySelector('[aria-label*="erified" i], [aria-label*="отвърден" i]'));
+    }
+    var resp = body.match(/(обикновено отговаря[^\n]{0,40}|отговаря много бързо[^\n]{0,30}|много отзивчив[^\n]{0,40}|typically (replies|responds)[^\n]{0,40}|very responsive[^\n]{0,40})/i);
+    var socials = [], seenS = {};
+    Array.prototype.forEach.call(main.querySelectorAll('a[href]'), function (a) {
+      var h = a.href;
+      try { var u = new URL(h); if (/l\.facebook\.com$/.test(u.hostname) && u.searchParams.get('u')) h = u.searchParams.get('u'); } catch (e) { return; }
+      var m = h.match(/^https?:\/\/(www\.)?(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|x\.com|twitter\.com|linkedin\.com|pinterest\.[a-z]+)\/[^?#\s]*/i);
+      if (m && !seenS[m[0].toLowerCase()]) { seenS[m[0].toLowerCase()] = 1; socials.push(m[0]); }
+    });
+    var ig = socials.filter(function (s) { return /instagram\.com/i.test(s); })[0] || null;
+    if (!ig) { var igt = body.match(/(?:^|\n)(?:instagram[:\s]*)?@?([a-z0-9_.]{3,30})\n?instagram/i); if (igt) ig = 'https://www.instagram.com/' + igt[1]; }
     return {
       url: location.href.split('?')[0], name: name, category: category, address: address, phone: phone,
       website: website, hours: hours, followers: followers ? followers[1].trim() : null,
+      likes: likes ? likes[1].trim() : null, verified: badge || null, response_badge: resp ? resp[1].trim() : null,
+      instagram: ig, socials: socials.slice(0, 8),
       price: price, email: emailM ? emailM[0] : null,
       recommend_pct: rec ? parseInt(rec[1], 10) : null,
       review_total: rec ? parseInt(rec[3].replace(/[^\d]/g, ''), 10) : null,
       first_review: first, state: pageState().state,
       login_dialog: /see more (on|from)|вижте повече (във|от)|log in|влезте/i.test(Array.prototype.map.call(document.querySelectorAll('[role="dialog"]'), function (d) { return txt(d); }).join(' '))
     };
+  }
+
+  // The Page's "Page transparency" tab (<page>/about_profile_transparency): creation date, name changes, whether it
+  // runs ads, where the people who manage it are. Facebook shows "value" above or below its label; both are read.
+  function transparency() {
+    var main = document.querySelector('[role="main"]') || document.body;
+    var lines = txt(main).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var year = /(19|20)\d{2}/;
+    var near = function (i) {
+      for (var d = 1; d <= 2; d++) {
+        if (lines[i + d] && year.test(lines[i + d]) && lines[i + d].length < 60) return lines[i + d];
+        if (lines[i - d] && year.test(lines[i - d]) && lines[i - d].length < 60) return lines[i - d];
+      }
+      return null;
+    };
+    var created = null, names = [], ads = null, admins = null, found = false;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (/прозрачност на страницата|page transparency/i.test(l)) found = true;
+      var inl = l.match(/^(дата на създаване|създадена на|page created|creation date|created)\s*[-–:·]?\s*(.*\d{4}.*)$/i);
+      if (!created && inl) { created = inl[2].trim(); found = true; continue; }
+      if (!created && /^(дата на създаване|създадена|страницата е създадена|page created|creation date|date created)(?![a-zа-я])/i.test(l)) { created = near(i); found = true; }
+      if (/^(промени(те)? (в|на) името|предишни имена|смени на името|name changes|changed name|previous names)/i.test(l)) {
+        found = true;
+        for (var j = i + 1; j < Math.min(lines.length, i + 12); j++) {
+          if (/^(дата на създаване|page created|реклами|ads|организации|organizations|основно местоположение|primary country)/i.test(lines[j])) break;
+          if (lines[j].length < 120) names.push(lines[j]);
+        }
+      }
+      if (ads === null && /(в момента (се )?рекламира|в момента пуска реклами|is currently running ads|this page is running ads)/i.test(l)) { ads = true; found = true; }
+      if (ads === null && /(не (се )?рекламира в момента|в момента не пуска реклами|not currently running ads|isn't running ads|is not running ads)/i.test(l)) { ads = false; found = true; }
+      if (!admins && /(основно местоположение|държава\/регион|primary country\/region|primary country location)/i.test(l)) {
+        var nx = lines[i + 1] || ''; if (nx && nx.length < 120 && !/^(виж|see|научете|learn)/i.test(nx)) admins = nx; found = true;
+      }
+    }
+    return { found: found, created: created, name_changes: names.slice(0, 10), ads_running: ads, admin_countries: admins,
+             state: pageState().state };
   }
 
   // Results of a web search page (DuckDuckGo HTML or Bing) that point to facebook.com: [{title, url, snippet}].
@@ -617,7 +676,7 @@ window.__fbx = (function () {
     return out;
   }
 
-  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.transparency = transparency; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal; F.recommendPct = recommendPct;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

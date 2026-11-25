@@ -28,6 +28,16 @@ class LocationPage(BaseModel):
     followers: str | None = None
     price: str | None = None
     email: str | None = None
+    hours: str | None = None
+    likes: str | None = None
+    verified: bool | None = None          # blue badge next to the name
+    response_badge: str | None = None     # "Обикновено отговаря до час"
+    instagram: str | None = None
+    socials: list[str] = Field(default_factory=list)  # Instagram / TikTok / YouTube / X / LinkedIn links on the Page
+    created: str | None = None            # Page transparency: creation date
+    name_changes: list[str] = Field(default_factory=list)
+    ads_running: bool | None = None
+    admin_countries: str | None = None    # where the people who manage the Page are
     rating_text: str | None = Field(default=None, description="e.g. '4.3 (120 reviews)' or '87% recommend' if shown")
     source: str | None = Field(default=None, description="Where it was found: locations_tab | search | map | other")
 

@@ -97,14 +97,19 @@ def write_excel(report: BrandReport, path: Path) -> None:
                         STATUS_BG.get(loc.status, loc.status), loc.recommend_pct, loc.review_total, st["reviews"],
                         st["recommends"], st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
                         st["reviews_with_page_reply"], st["page_replies"], st["generated"], st["manual"], st["uncertain"],
+                        l.likes, yn[l.verified], l.response_badge, l.hours, l.instagram, ", ".join(l.socials or []),
+                        l.created, "; ".join(l.name_changes or []), yn[l.ads_running], l.admin_countries,
                         loc.notes])
         return out
 
     PAGE_HEADERS = ["Страница", "Държава", "Категория", "Град", "Адрес", "Телефон", "Сайт", "Имейл", "Последователи", "Facebook",
                     "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват",
                     "Не препоръчват", "Ревюта с коментари", "Коментари (брой по FB)", "Ревюта с отговор от страницата",
-                    "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Бележки"]
-    PAGE_WIDTHS = [36, 14, 18, 12, 30, 14, 18, 22, 12, 40, 16, 11, 12, 11, 11, 11, 12, 12, 14, 12, 11, 8, 8, 40]
+                    "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Харесвания", "Синя отметка",
+                    "Отговаря на съобщения", "Работно време", "Instagram", "Други мрежи", "Създадена",
+                    "Смени на името", "Пуска реклами", "Управлявана от (държава)", "Бележки"]
+    PAGE_WIDTHS = [36, 14, 18, 12, 30, 14, 18, 22, 12, 40, 16, 11, 12, 11, 11, 11, 12, 12, 14, 12, 11, 8, 8,
+                   11, 9, 24, 18, 30, 40, 16, 40, 10, 20, 40]
     if report.brand_sections:
         _sheet(wb, "Бранд", PAGE_HEADERS, page_rows(report.brand_sections), PAGE_WIDTHS)
 

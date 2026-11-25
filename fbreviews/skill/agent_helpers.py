@@ -271,6 +271,11 @@ def fb_js(expression):
 
 # ------------------------------------------------------------------ discovery
 SEARCH_IDLE_LIMIT = int(_CFG.get("search_idle_limit", 3))
+# Page fields read from the header (no extra page load) and from the transparency tab (one extra paced page)
+PAGE_KEYS = ("category", "followers", "price", "website", "phone", "address", "email", "hours", "likes", "verified",
+             "response_badge", "instagram", "socials")
+DETAIL_KEYS = ("created", "name_changes", "ads_running", "admin_countries")
+PAGE_DETAILS = bool(_CFG.get("page_details", True))
 # with NO location found yet the 3-search rule does not apply (don't give up before the first find), but this cap
 # does: many brands (e.g. one restaurant chain with a single Page) have no Page per location at all
 SEARCH_EMPTY_LIMIT = int(_CFG.get("search_empty_limit", 6))
@@ -383,6 +388,10 @@ def fb_extract_reviews(url, max_reviews=None, name=None, location=None, save=Tru
     location is retried after a resume. Neither are `unknown` and `suspect` (the health check says the extractor
     misreads the page, see preflight.md): repair, then extract that location again."""
     res = _extract_reviews(url, max_reviews=max_reviews, name=name)
+    if res.get("status") in ("ok", "partial", "no_reviews", "reviews_disabled"):
+        det = _page_details(url)
+        if det:
+            res.setdefault("diagnostics", {}).setdefault("page", {}).update(det)
     if save and res.get("status") not in ("login_required", "blocked", "stopped", "cap_reached", "unknown", "suspect"):
         res["saved"] = fb_save_result(location or {"url": url, "name": name}, res)
     return res
@@ -407,8 +416,7 @@ def _extract_reviews(url, max_reviews=None, name=None):
     reviews, diag = _collect(opts)
     try:  # the Page header on the same tab (no extra page load): category, followers, price, % recommend
         head = _run("__fbx.pageSummary()") or {}
-        diag["page"] = {k: head.get(k) for k in ("name", "category", "followers", "price", "website", "phone", "address", "email")
-                        if head.get(k)}
+        diag["page"] = {k: head.get(k) for k in ("name",) + PAGE_KEYS if head.get(k)}
         if diag.get("recommend_pct") is None and head.get("recommend_pct") is not None:
             diag["recommend_pct"] = head["recommend_pct"]
     except Exception:
@@ -994,6 +1002,32 @@ def fb_web_search(query, pages=1):
     return out
 
 
+def _page_details(url):
+    """The Page's transparency tab: {created, name_changes, ads_running, admin_countries} (only what is shown).
+    One extra page load with the usual pacing; nothing (and no stop) if the tab is missing."""
+    if not PAGE_DETAILS or fb_stopped():
+        return {}
+    page = fb_page_url(url) or url
+    tab = page + ("&sk=about_profile_transparency" if "profile.php" in page else "/about_profile_transparency")
+    r = fb_open(tab)
+    if not isinstance(r, dict) or not r.get("ok"):
+        return {}
+    d = {}
+    for _ in range(4):  # the tab renders late
+        d = _run("__fbx.transparency()")
+        d = d if isinstance(d, dict) else {}
+        if d.get("found"):
+            break
+        time.sleep(2)
+    out = {k: d.get(k) for k in DETAIL_KEYS if d.get(k) not in (None, "", [])}
+    if out:
+        bits = [f"създадена {out['created']}" if out.get("created") else "",
+                f"{len(out['name_changes'])} смени на името" if out.get("name_changes") else "",
+                {True: "пуска реклами", False: "без реклами"}.get(out.get("ads_running"), "")]
+        _say("  прозрачност: " + ", ".join(b for b in bits if b))
+    return out
+
+
 def fb_page_summary(url):
     """Public data of a Facebook Page WITHOUT login: {name, category, address, phone, website, hours, followers,
     recommend_pct, review_total, first_review, state}. state 'ok' = read; 'not_found' / 'blocked' / 'stopped' as
@@ -1010,6 +1044,7 @@ def fb_page_summary(url):
         time.sleep(2)
     s["state"] = "ok"
     s["url"] = page
+    s.update(_page_details(page))
     rec = (f"{s['recommend_pct']}% препоръка, {s.get('review_total')} ревюта" if s.get("recommend_pct") is not None
            else "без препоръки/ревюта")
     _say(f"  публични данни: {s.get('name') or _short(page)} — {rec}, {s.get('address') or 'без адрес'}")
@@ -1020,8 +1055,8 @@ def fb_save_summary(location, summary, folder="results"):
     """Save one location in lite mode (results/<slug>.json, status 'summary_only'; or the failure state)."""
     loc = dict(location if isinstance(location, dict) else {"url": str(location)})
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
-    for k in ("category", "address", "phone", "website", "followers", "price", "email"):
-        if summary.get(k) and not loc.get(k):
+    for k in PAGE_KEYS + DETAIL_KEYS:
+        if summary.get(k) not in (None, "", []) and not loc.get(k):
             loc[k] = summary[k]
     if summary.get("name") and (not loc.get("name") or " " not in loc["name"]):  # a slug like "HappyRakovski"
         loc["name"] = summary["name"]
@@ -1084,8 +1119,8 @@ def fb_extract_brand(url, name=None, max_reviews=None):
     scope = next((b.get("scope") for b in fb_brand_pages() if b.get("url") == page), None)
     loc = {"name": summary.get("name") or name or page, "url": page, "source": "brand_page",
            "country": (scope if scope and str(scope).lower() not in ("global", "country", "world") else None)}
-    for k in ("category", "address", "phone", "website", "followers", "price", "email"):
-        if summary.get(k):
+    for k in PAGE_KEYS + DETAIL_KEYS:
+        if summary.get(k) not in (None, "", []):
             loc[k] = summary[k]
     if LITE or summary.get("state") != "ok":
         return fb_save_summary(loc, summary, folder="brand")

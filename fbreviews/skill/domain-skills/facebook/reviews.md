@@ -49,6 +49,12 @@ changes its UI (`fb_save_override`).
 5. Parse the snippet into address / city / country / category / rating_text and call `fb_add_locations(batch)`
    after every search. Stop when the cap is reached or new searches stop adding locations.
 
+**Same brand, not a namesake.** Many names are generic ("Pizza Lab", "Happy", "Boom Burgers"): a Page with the same
+name is a location of THIS brand only with proof — it links to the brand's website or official Page, it is listed
+on the brand's Page / website, or it shares the brand's logo and naming pattern (e.g. "Raffy Bar & Gelato Plovdiv").
+A same-name business in another city or country without that proof is NOT added. Check the snippet (website,
+category, address) and, when unsure, open the Page once and look for the brand's link.
+
 **Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
 never repeat a query. Then go on: extracting is the goal, not searching.
 

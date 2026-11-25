@@ -281,16 +281,16 @@ def _search_gate(query, kind):
     """Repeated queries are answered from the cache (no page load); after SEARCH_IDLE_LIMIT searches in a row that
     added no location, searching is closed for the run so the agent moves on to extracting."""
     st = _search_state()
-    if st.get("pending"):  # the previous search was not followed by fb_add_locations: it added nothing
+    key = f"{kind}:{query.strip().lower()}"
+    if key in st["queries"]:  # a repeat: answered from memory, and it does not count as an empty search
+        _say(f"  (вече търсено: „{query}“ — връщам запомнения резултат)")
+        return st, key, st["queries"][key]
+    if st.get("pending"):  # the previous NEW search was not followed by fb_add_locations: it added nothing
         st["idle"] = st.get("idle", 0) + 1
         st.pop("pending", None)
         if st["idle"] >= SEARCH_IDLE_LIMIT:
             st["closed"] = True
         _write("search_state.json", st)
-    key = f"{kind}:{query.strip().lower()}"
-    if key in st["queries"]:
-        _say(f"  (вече търсено: „{query}“ — връщам запомнения резултат)")
-        return st, key, st["queries"][key]
     if st.get("closed") and fb_locations():
         _say("  търсенето е приключено (3 поредни без нова локация) — минавам към извличането")
         return st, key, {"error": "search_closed", "message": "Search is closed for this run: the last searches added no "

@@ -31,6 +31,12 @@ Read `preflight.md` only for its safety rules; its review checks do not apply he
 4. `fb_add_locations(batch)` after every few finds. If `fb_web_search` returns `search_challenge`, stop searching
    (do not solve it) and go on with the locations you have; say so in notes.
 
+**Same brand, not a namesake.** Many names are generic ("Pizza Lab", "Happy", "Boom Burgers"): a Page with the same
+name is a location of THIS brand only with proof — it links to the brand's website or official Page, it is listed
+on the brand's Page / website, or it shares the brand's logo and naming pattern (e.g. "Raffy Bar & Gelato Plovdiv").
+A same-name business in another city or country without that proof is NOT added. Check the snippet (website,
+category, address) and, when unsure, open the Page once and look for the brand's link.
+
 **Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
 never repeat a query. Then go on: extracting is the goal, not searching.
 

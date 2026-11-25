@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Start a scrape in the background and return at once (for OpenWork's agent, whose commands have a time limit).
-#   scripts/run_bg.sh "Zara" [max_locations=50] [max_reviews=200] [lite|lite-hidden]
+#   scripts/run_bg.sh "Zara" [max_locations=0] [max_reviews=0] [lite|lite-hidden]     (0 = all, the default)
 #   lite        = only public Page data (% recommend, number of reviews, address, phone), in OpenWork's visible browser
 #   lite-hidden = the same in a hidden fresh browser with no Facebook account (OpenWork not needed)
 #   scripts/run_bg.sh --resume            # continue the latest run
@@ -22,7 +22,7 @@ if [ "$1" = "--resume" ]; then
   args=(scrape --resume "$last")
 else
   [ -n "$1" ] || { echo 'USAGE: scripts/run_bg.sh "<brand>" [max_locations] [max_reviews] [lite|lite-hidden]'; exit 4; }
-  args=(scrape "$1" --max-locations "${2:-50}" --max-reviews "${3:-200}")
+  args=(scrape "$1" --max-locations "${2:-0}" --max-reviews "${3:-0}")
   case "$4" in
     lite|--lite) args+=(--lite) ;;
     lite-hidden|hidden) args+=(--lite --hidden) ;;

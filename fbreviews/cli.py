@@ -78,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sc = sub.add_parser("scrape", help="намери локациите и извлечи ревютата")
     sc.add_argument("brand", nargs="?", help='бранд / магазин, напр. "Zara" (без него програмата пита)')
-    sc.add_argument("--max-locations", type=int, default=200)
-    sc.add_argument("--max-reviews", type=int, default=500, help="максимум ревюта на локация")
+    sc.add_argument("--max-locations", type=int, default=0, help="0 (по подразбиране) = всички локации")
+    sc.add_argument("--max-reviews", type=int, default=0, help="0 (по подразбиране) = всички ревюта на локация")
     sc.add_argument("--out", type=Path, default=Path("output"))
     sc.add_argument("--resume", type=Path, help="продължи прекъснато изпълнение (папка в output/)")
     sc.add_argument("--locations-file", type=Path, help="JSON списък с локации [{name,url}] — без търсене")

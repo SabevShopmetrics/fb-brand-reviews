@@ -84,11 +84,15 @@ def install_skill(workspace: Path, config: dict) -> Path:
     return aw
 
 
+def _scope(max_locations: int) -> str:
+    return "ALL of them, no limit" if max_locations >= 100000 else f"up to {max_locations} locations"
+
+
 def task_text_lite(brand: str, aw: Path, max_locations: int, hint: str | None, round_no: int, locations_given: bool) -> str:
     skill = aw / "domain-skills" / "facebook" / "lite.md"
     lines = [
         f'Brand: "{brand}". Lite mode, no Facebook login: collect the public Page data (category, address, phone, '
-        f"website, % recommend, number of reviews) of every physical location of this brand (up to {max_locations}).",
+        f"website, % recommend, number of reviews) of every physical location of this brand ({_scope(max_locations)}).",
         f"Skill: read {skill} first (print(open(r'{skill}').read())) and follow it.",
         "Start with fb_progress(): files from earlier rounds are kept, continue from there.",
     ]
@@ -106,7 +110,8 @@ def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_
     pre = aw / "domain-skills" / "facebook" / "preflight.md"
     lines = [
         f'Brand: "{brand}". Collect the Facebook reviews (and their comment counts) for every physical location '
-        f"of this brand (up to {max_locations} locations), one location at a time.",
+        f"of this brand ({_scope(max_locations)}), one location at a time. Collect EVERYTHING: all locations you can "
+        "find and all of their reviews; do not stop early.",
         f"Skill: read {pre} first (print(open(r'{pre}').read())): it defines the output we want and the "
         f"preflight / self-repair. Then read {skill} (print(open(r'{skill}').read())) and follow both.",
         "Start with fb_progress(): files from earlier rounds are kept, continue from there. If its "
@@ -122,7 +127,7 @@ def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_
     return "\n".join(lines)
 
 
-CELL_TIMEOUT_S = float(os.environ.get("AGENT_CELL_TIMEOUT", "960"))
+CELL_TIMEOUT_S = float(os.environ.get("AGENT_CELL_TIMEOUT", "4000"))  # > LOCATION_MAX_SECONDS: one location per cell
 
 
 def _allow_long_cells() -> None:

@@ -22,12 +22,11 @@ if [ -z "$brand" ]; then
   [ -n "$last" ] || { echo "Няма какво да продължа."; read; exit 1; }
   .venv/bin/python -m fbreviews scrape --resume "$last"
 else
-  read "maxloc?Колко локации максимум [200]: "
   read "lite?Лек режим без профил (само % препоръка, брой ревюта, адрес; във вградения браузър на OpenWork)? [y/N]: "
   if [[ "$lite" == [yYдД]* ]]; then
-    .venv/bin/python -m fbreviews scrape "$brand" --max-locations "${maxloc:-200}" --lite
+    .venv/bin/python -m fbreviews scrape "$brand" --lite
   else
-    .venv/bin/python -m fbreviews scrape "$brand" --max-locations "${maxloc:-200}"
+    .venv/bin/python -m fbreviews scrape "$brand"
   fi
 fi
 echo; echo "Готово. Натиснете Enter за затваряне."; read

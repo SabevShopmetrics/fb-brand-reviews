@@ -17,15 +17,16 @@ Tool folder (TOOL_DIR): `__TOOL_DIR__`
    never log in for them.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill
    `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `TOOL_DIR/.env` (open it for them). Never print the key.
-3. Ask only what is missing: the brand (required). Defaults: 50 locations, 200 reviews per location. For a quick
-   test suggest 2 locations / 20 reviews.
+3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING: all locations, all reviews, the
+   brand's own Pages. Never add limits on your own; use numbers only if the user explicitly asks for a quick test.
 
 ## Run
 ```bash
-cd "__TOOL_DIR__" && scripts/run_bg.sh "<brand>" <max_locations> <max_reviews>
+cd "__TOOL_DIR__" && scripts/run_bg.sh "<brand>"
 ```
+(= everything. Only for an explicit quick test: `scripts/run_bg.sh "<brand>" <max_locations> <max_reviews>`.)
 **Lite mode (no Facebook profile needed):** add `lite` as the 4th argument
-(`scripts/run_bg.sh "<brand>" <max_locations> 0 lite`). It runs in this OpenWork's built-in browser, so the user can
+(`scripts/run_bg.sh "<brand>" 0 0 lite` = all locations). It runs in this OpenWork's built-in browser, so the user can
 watch it, and collects only each location's public data: category, address, phone, website, % recommend and number
 of reviews — no review texts, no replies. It works whether or not that browser is logged in to Facebook; for a test
 that is truly without a profile, the user logs out of Facebook in the built-in browser themselves (never do it for
@@ -43,7 +44,8 @@ cd "__TOOL_DIR__" && scripts/status.sh
 ```
 Shows RUNNING / FINISHED, the key log lines (`Рунд N`, `→ локации X, готови Y`) and, when done, the report paths.
 Check it when the user asks, or about every 3–5 minutes while you wait. It is slow on purpose (6–14 s between
-pages, daily page cap) to keep the Facebook account safe: a few minutes per location.
+pages) to keep the Facebook account safe; with all reviews a large location can take many minutes, a big brand hours.
+That is expected: let it run, report progress, never stop it to save time.
 
 ## When it is finished
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,

@@ -61,6 +61,13 @@ comment_count, replies, replies_unavailable}`. Пак там е описано �
 `output/<run>/workspace/fb_extract_override.js` и прегледайте я. По-добре е промяната да влезе направо в
 `fbreviews/js/fb_extract.js`.
 
+## Без лимити
+
+По подразбиране инструментът взема **всичко**: всички локации, всички ревюта и официалните страници на бранда.
+`--max-locations N` / `--max-reviews N` са само за бърз тест (0 = всичко). Единствената спирачка е паузата между
+страниците (6–14 сек), която пази акаунта; дневният лимит е 5000 страници (`DAILY_PAGE_CAP`). Голям бранд може да
+отнеме часове; прекъснато изпълнение продължава с `--resume`.
+
 ## Пускане с двойно щракване
 
 `start.command` във Finder → пита за бранд → проверява OpenWork и модела → пуска агента. Enter без бранд продължава
@@ -87,7 +94,7 @@ OpenWork и пишете в чата, например: „Извлечи Facebo
 отговори няма (те изискват вход).
 
 ```bash
-.venv/bin/python -m fbreviews scrape "Happy Bar & Grill" --lite --max-locations 20
+.venv/bin/python -m fbreviews scrape "Happy Bar & Grill" --lite
 ```
 
 - По подразбиране работи във **вградения браузър на OpenWork** — виждате какво прави. Профил не е нужен; за тест
@@ -95,7 +102,7 @@ OpenWork и пишете в чата, например: „Извлечи Facebo
 - `--lite --hidden`: невидим отделен браузър с временен профил, без бисквитки и вход; OpenWork не е нужен.
 - Локациите се намират от сайта на бранда (списък с обекти) и с търсене в Bing. Ако търсачка покаже CAPTCHA,
   агентът не я решава, а продължава с намереното. Най-сигурно: подайте готов списък с `--locations-file`.
-- От OpenWork: в чата „…лек режим / без профил“, или `scripts/run_bg.sh "<бранд>" 20 0 lite` (`lite-hidden` за
+- От OpenWork: в чата „…лек режим / без профил“, или `scripts/run_bg.sh "<бранд>" 0 0 lite` (`lite-hidden` за
   невидимия браузър).
 - В Excel: колони „% препоръка (FB)“ и „Ревюта във FB (общо)“, статус `summary_only`.
 
@@ -153,7 +160,7 @@ cp .env.example .env
 3. Пускане:
 
 ```bash
-.venv/bin/python -m fbreviews scrape "Zara" --max-locations 200 --max-reviews 500
+.venv/bin/python -m fbreviews scrape "Zara"
 ```
 
 Полезни опции:

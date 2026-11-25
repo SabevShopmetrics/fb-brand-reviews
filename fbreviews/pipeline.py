@@ -30,6 +30,7 @@ logger = logging.getLogger("fbreviews.pipeline")
 TRANSIENT = ("503", "502", "504", "429", "ModelUnavailable", "Service Unavailable", "overloaded", "rate limit",
              "timed out", "Connection reset")
 STOP_STATES = ("login_required", "blocked", "cap_reached")
+UNLIMITED = 100000  # "all": no cap on locations or reviews
 
 
 def new_run_dir(out_dir: Path, brand: str) -> Path:
@@ -159,8 +160,8 @@ async def run(
     *,
     out_dir: Path = Path("output"),
     resume: Path | None = None,
-    max_locations: int = 200,
-    max_reviews: int = 500,
+    max_locations: int = 0,
+    max_reviews: int = 0,
     locations_file: Path | None = None,
     hint: str | None = None,
     use_llm_classifier: bool = True,
@@ -172,6 +173,8 @@ async def run(
 
     from .agents import make_llm, run_agent
 
+    max_locations = max_locations if max_locations and max_locations > 0 else UNLIMITED  # 0 = everything
+    max_reviews = max_reviews if max_reviews and max_reviews > 0 else UNLIMITED
     if missing := s.missing_llm():
         raise SystemExit(f"Липсват настройки в .env: {', '.join(missing)}")
     if not (lite and hidden) and not s.openwork_cdp_url:
@@ -204,6 +207,7 @@ async def run(
     if locations_given:  # a given list is the whole list: the helpers will not add more
         max_locations = len(json.loads((ws / "locations.json").read_text()))
     config = {"pace_min_s": s.pace_min_s, "pace_max_s": s.pace_max_s, "daily_page_cap": s.daily_page_cap,
+              "scroll_max_s": s.location_max_s,
               "max_reviews": max_reviews, "max_locations": max_locations, "lite": lite}
     progress(f"Папка: {run_dir}")
 

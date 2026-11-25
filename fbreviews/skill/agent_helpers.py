@@ -36,9 +36,9 @@ _CFG = json.loads((_HERE / "fb_config.json").read_text()) if (_HERE / "fb_config
 
 PACE_MIN = float(_CFG.get("pace_min_s", 6))        # seconds between page loads, at least
 PACE_MAX = float(_CFG.get("pace_max_s", 14))       # ... and at most
-DAILY_PAGE_CAP = int(_CFG.get("daily_page_cap", 600))
-MAX_REVIEWS = int(_CFG.get("max_reviews", 500))
-MAX_LOCATIONS = int(_CFG.get("max_locations", 200))
+DAILY_PAGE_CAP = int(_CFG.get("daily_page_cap", 5000))
+MAX_REVIEWS = int(_CFG.get("max_reviews", 100000))      # 100000 = all
+MAX_LOCATIONS = int(_CFG.get("max_locations", 100000))  # 100000 = all
 # Facebook does not show comment threads under reviews (recommendations) to viewers: only the count is collected.
 # True would open every review with comments to try anyway (one extra page load each).
 OPEN_THREADS = bool(_CFG.get("open_threads", False))
@@ -47,7 +47,7 @@ OPEN_THREADS = bool(_CFG.get("open_threads", False))
 LITE = bool(_CFG.get("lite", False))
 SEARCH_CHALLENGE = re.compile(r"(bots use|confirm this search was made by a human|verify you are human|потвърдете, че сте "
                               r"човек|unusual traffic|captcha|are you a robot)", re.I)
-SCROLL_MAX_S = float(_CFG.get("scroll_max_s", 900))  # at most this long scrolling one reviews tab
+SCROLL_MAX_S = float(_CFG.get("scroll_max_s", 3600))  # at most this long scrolling one reviews tab
 
 # Preflight / self-repair (see domain-skills/facebook/preflight.md).
 OVERRIDE_FILE = "fb_extract_override.js"   # in the workspace: survives rounds and --resume of the same run
@@ -359,7 +359,7 @@ def _collect(opts, reset=False):
             break
     sw = {}
     if time.time() < deadline:   # second slow pass in the same page: late reply previews, expanded texts
-        sw = _run("__fbx.sweep(" + json.dumps({**opts, "sweepMaxMs": int(max(30, min(240, deadline - time.time())) * 1000)}) + ")") or {}
+        sw = _run("__fbx.sweep(" + json.dumps({**opts, "sweepMaxMs": int(max(30, min(1800, deadline - time.time())) * 1000)}) + ")") or {}
     data = _run("__fbx.extract(" + json.dumps(opts) + ")") or {}
     diag = data.get("diagnostics", {}) or {}
     diag["sweep"] = sw

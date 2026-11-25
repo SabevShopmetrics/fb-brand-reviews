@@ -55,6 +55,7 @@ class Settings:
     pace_min_s: float
     pace_max_s: float
     daily_page_cap: int
+    location_max_s: int
     judge: bool
 
     @classmethod
@@ -72,11 +73,12 @@ class Settings:
             openwork_cdp_url=os.environ.get("OPENWORK_CDP_URL", "").strip() or detect_openwork_cdp_url(),
             openwork_tab_match=os.environ.get("OPENWORK_TAB_MATCH", "").strip() or None,
             max_steps=_int("AGENT_MAX_STEPS", 250),
-            timeout=_int("AGENT_TIMEOUT", 7200),
-            max_rounds=_int("AGENT_MAX_ROUNDS", 6),
+            timeout=_int("AGENT_TIMEOUT", 21600),
+            max_rounds=_int("AGENT_MAX_ROUNDS", 30),
             pace_min_s=_float("PACE_MIN_SECONDS", 6.0) or 6.0,
             pace_max_s=_float("PACE_MAX_SECONDS", 14.0) or 14.0,
-            daily_page_cap=_int("DAILY_PAGE_CAP", 600),
+            daily_page_cap=_int("DAILY_PAGE_CAP", 5000),
+            location_max_s=_int("LOCATION_MAX_SECONDS", 3600),
             judge=_bool("AGENT_JUDGE", False),
         )
 

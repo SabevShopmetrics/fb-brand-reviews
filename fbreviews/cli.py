@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             a.brand, s, out_dir=a.out, resume=a.resume, max_locations=a.max_locations, max_reviews=a.max_reviews,
             locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden, country=a.country,
         ))
-        print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}")
+        print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}\nHTML:  {run_dir / 'report.html'}")
         return 0
 
     if a.cmd == "finalize":

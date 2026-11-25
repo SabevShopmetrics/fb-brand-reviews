@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -54,8 +55,13 @@ def to_reviews(raw: list) -> list[Review]:
             reviewer=r.get("reviewer"),
             recommends=rec if isinstance(rec, bool) else None,
             rating=int(rating) if isinstance(rating, (int, float)) or (isinstance(rating, str) and rating.isdigit()) else None,
-            text=r.get("text"), date_text=r.get("date_text"), permalink=r.get("permalink"),
+            text=re.sub(r"\s*(Вижте по-малко|Виж по-малко|See less)\s*$", "", r.get("text") or "", flags=re.I) or r.get("text"),
+            date_text=r.get("date_text"), permalink=r.get("permalink"),
             comment_count=int(cc) if isinstance(cc, (int, float)) else None,
+            date_full=r.get("date_full"),
+            tags=[str(t) for t in (r.get("tags") or []) if t][:30],
+            reactions=int(r["reactions"]) if isinstance(r.get("reactions"), (int, float)) else None,
+            photos=int(r.get("photos") or 0) if isinstance(r.get("photos"), (int, float)) else 0,
             replies_unavailable=bool(r.get("replies_unavailable")),
             replies=replies,
         ))
@@ -151,6 +157,9 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
     report.summary = summarize(report)
     write_json(report, run_dir / "report.json")
     write_excel(report, run_dir / "report.xlsx")
+    from .html_report import write_html
+
+    write_html(json.loads((run_dir / "report.json").read_text()), run_dir / "report.html")
     return report
 
 

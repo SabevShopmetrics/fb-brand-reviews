@@ -11,4 +11,5 @@ dir=$(grep -o "Папка: .*" "$log" | head -1 | sed 's/Папка: //')
 if [ -n "$dir" ] && [ -f "$dir/report.json" ]; then
   echo "report: $(pwd)/$dir/report.json"
   echo "excel:  $(pwd)/$dir/report.xlsx"
+  echo "html:   $(pwd)/$dir/report.html"
 fi

@@ -15,7 +15,7 @@ window.__fbx = (function () {
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
   var EXPAND = new RegExp('^(' + [
-    'see more', 'read more', 'вижте повече', 'вижте още', 'покажи повече', 'показване на още', 'view more comments', 'view previous comments', 'view more replies', 'view all \\d+ replies',
+    'see more', 'read more', 'вижте повече', 'вижте още', '(… |…)?see \\d+ more', '(… |…)?вижте още \\d+', 'покажи повече', 'показване на още', 'view more comments', 'view previous comments', 'view more replies', 'view all \\d+ replies',
     'view \\d+ (more )?repl(y|ies)', '\\d+ repl(y|ies)', 'view 1 reply', 'more replies',
     'виж още', 'виж още коментари', 'виж предишните коментари', 'виж още отговори', 'виж всички \\d+ отговора',
     'виж \\d+ (още )?отговор(а)?', '\\d+ отговор(а)?', 'виж 1 отговор', 'още отговори',
@@ -26,7 +26,7 @@ window.__fbx = (function () {
   var COMMENT_LABEL = /^(comment|reply|коментар|отговор|comentario|respuesta|commentaire|réponse|kommentar|antwort|commento|risposta|comentário|resposta|komentarz|odpowiedź|comentariu|răspuns|σχόλιο|απάντηση|yorum|yanıt)/i;
   var NEG = /(doesn['’]t recommend|does not recommend|не препоръчва|no recomienda|ne recommande pas|empfiehlt .{0,40}nicht|non consiglia|não recomenda|nie poleca|nu recomandă|δεν προτείνει|önermiyor)/i;
   var POS = /(recommends|препоръчва|recomienda|recommande|empfiehlt|consiglia|recomenda|poleca|recomandă|προτείνει|öneriyor)/i;
-  var UI_NOISE = /^(like|reply|share|харесва(м|не)?|отговор(и)?|сподели|see translation|виж превода|rate this translation|оценете превода|author|автор|top fan|топ фен|edited|редактирано|follow|последвай|\d+[smhdwy]|\d+ ?(мин|ч|д|с|г)\.?)$/i;
+  var UI_NOISE = /^(like|reply|share|харесва(м|не)?|отговор(и)?|сподели|see translation|виж превода|вижте превода|see original|вижте оригинала|rate this translation|оценете превода|author|автор|top fan|топ фен|edited|редактирано|follow|последвай|\d+[smhdwy]|\d+ ?(мин|ч|д|с|г)\.?)$/i;
   var COMMENT_COUNT = /(\d+)\s*(коментар|comment|comentario|commentaire|kommentar|commento|komentarz|comentário|σχόλι|yorum)/i;
   var POST_LINK = /(\/posts\/|story_fbid=|\/permalink\/|\/reviews\/|pfbid|\/activity\/|multi_permalinks)/;
 
@@ -210,7 +210,50 @@ window.__fbx = (function () {
       var cm = lab.match(F.re.COMMENT_COUNT);
       if (cm) commentCount = parseInt(cm[1], 10);
     }
+    if (text) text = text.replace(/\s*(вижте по-малко|виж по-малко|see less|вижте превода|see translation)\s*$/i, '').trim();
+    // Extra details shown on the review itself: exact date-time, tags ("Kid friendly · Fast delivery"), reactions,
+    // photos. Read from the review's own lines (comments excluded).
+    var plines = [];
+    (function () {
+      var all = txt(P).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+      for (var q = 0; q < all.length; q++) {
+        if (/^(коментиране като|comment as|напишете коментар|write a comment)/i.test(all[q])) break;
+        plines.push(all[q]);
+      }
+    })();
+    var dateFull = null;
+    for (var d = 0; d < Math.min(plines.length, 8); d++) {
+      if (/^(понеделник|вторник|сряда|четвъртък|петък|събота|неделя|monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s/i.test(plines[d])) { dateFull = plines[d]; break; }
+    }
+    var tags = [];
+    if (text) {
+      var lastText = text.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).pop();
+      var ti = plines.lastIndexOf(lastText);
+      if (ti >= 0) {
+        for (var u = ti + 1; u < plines.length; u++) {
+          var tl = plines[u];
+          if (/^\d[\d\s.,]*$/.test(tl)) break;                 // counters start: reactions / comments
+          if (tl === '·' || F.re.UI_NOISE.test(tl) || /^(…\s*)?(see \d+ more|вижте още \d+)/i.test(tl)) continue;
+          if (tl.length <= 40 && !/[.!?:]$/.test(tl)) tags.push(tl.replace(/^·\s*|\s*·$/g, '')); else break;
+        }
+      }
+    }
+    var reactions = null;
+    var rl = Array.prototype.slice.call(P.querySelectorAll('[aria-label]')).filter(function (e) { return !own(e); });
+    for (var w = 0; w < rl.length && reactions === null; w++) {
+      var lab2 = rl[w].getAttribute('aria-label') || '';
+      var rm2 = lab2.match(/^(харесване|like|всички реакции|all reactions|реакции|reactions)\s*:\s*(\d[\d\s.,]*)/i);
+      if (rm2) reactions = parseInt(rm2[2].replace(/[^\d]/g, ''), 10);
+      else if (/^(реагирайте с харесване|react with like|like)/i.test(lab2) && /^\d+$/.test(txt(rl[w]))) reactions = parseInt(txt(rl[w]), 10);
+    }
+    var photos = Array.prototype.filter.call(P.querySelectorAll('img'), function (im) {
+      return !own(im) && (im.naturalHeight || im.height || 0) >= 120 && !/emoji|rsrc\.php/.test(im.src || '');
+    }).length;
     return {
+      date_full: dateFull,
+      tags: tags,
+      reactions: reactions,
+      photos: photos,
       comment_count: commentCount,
       reviewer: reviewer,
       recommends: recommends,
@@ -242,6 +285,10 @@ window.__fbx = (function () {
           ((r.replies || []).length === (old.replies || []).length && tl(r.replies) > tl(old.replies))) old.replies = r.replies;
       if (r.text && (!old.text || r.text.length > old.text.length)) old.text = r.text;
       if (old.comment_count == null && r.comment_count != null) old.comment_count = r.comment_count;
+      if (old.reactions == null && r.reactions != null) old.reactions = r.reactions;
+      if (!old.date_full && r.date_full) old.date_full = r.date_full;
+      if ((r.tags || []).length > (old.tags || []).length) old.tags = r.tags;
+      if ((r.photos || 0) > (old.photos || 0)) old.photos = r.photos;
     }
     return acc;
   }

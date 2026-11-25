@@ -94,3 +94,15 @@ def test_to_reviews_tolerates_agent_output():
             "replies": [{"author": "P", "text": None, "depth": None}, "junk"]}]
     r = to_reviews(raw)[0]
     assert r.recommends is None and r.rating == 4 and r.replies[0].text == "" and r.replies[0].depth == 1
+
+
+def test_html_report(tmp_path):
+    from fbreviews.html_report import write_html
+    report = _report()
+    asyncio.run(classify_replies(report.locations, "Zara", llm=None))
+    report.summary = summarize(report)
+    write_json(report, tmp_path / "r.json")
+    write_html(json.loads((tmp_path / "r.json").read_text()), tmp_path / "r.html")
+    html = (tmp_path / "r.html").read_text()
+    assert "Zara Mall Sofia" in html and "<script id=\"data\" type=\"application/json\">" in html
+    assert "</script>" not in html.split('type="application/json">', 1)[1].split("</script>", 1)[0]

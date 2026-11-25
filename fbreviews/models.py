@@ -76,6 +76,10 @@ class Review(BaseModel):
     date_text: str | None = None
     permalink: str | None = None
     comment_count: int | None = None
+    date_full: str | None = None      # "Петък, 14 април 2023 г. в 13:09"
+    tags: list[str] = Field(default_factory=list)  # Facebook review tags: "Kid friendly", "Fast delivery"…
+    reactions: int | None = None
+    photos: int = 0
     replies_unavailable: bool = False  # Facebook showed a comment count but did not load the thread
     replies: list[Reply] = Field(default_factory=list)
 

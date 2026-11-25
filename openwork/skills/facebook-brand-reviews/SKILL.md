@@ -59,8 +59,9 @@ It prints RUNNING / FINISHED and "какво прави": the tool's own step-by
 - It is slow on purpose (6–14 s between pages) to keep the account safe; a large brand can take hours. That is normal.
 
 ## When it is finished
-- Say clearly that it is finished, then give the files: the Excel `report.xlsx` (sheets Обобщение, Бранд, Локации,
-  Ревюта, Отговори) and `report.json` — full paths from `status.sh`; offer to open the Excel (`open "<path>"`).
+- Say clearly that it is finished, then OPEN the interactive report for the user: `open "<run folder>/report.html"`
+  (statistics, charts, brand Pages, locations comparison, every review with text, tags, reactions, photos, replies;
+  filters, search, CSV/JSON download). Also give the paths of `report.xlsx` (Excel) and `report.json` (all data).
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.

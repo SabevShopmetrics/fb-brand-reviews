@@ -22,6 +22,8 @@ changes its UI (`fb_save_override`).
 | Helper | What it does |
 |---|---|
 | `fb_progress()` | `{locations, done, todo, stopped, preflight: {healthy, due, failed, unhealthy_streak}, override_active}` — call FIRST: the run may be a continuation |
+| `fb_add_brand_pages([{name, url, scope}])` | record the brand's official Pages (global / country): a separate section, never locations |
+| `fb_extract_brand(url, name=...)` | the brand Page as its own section: public data (+ reviews and replies when logged in) |
 | `fb_preflight(sample_url=None, search_query=None, reload=True)` | health report of the extractor on one reviews page (and search) → `{healthy, failed, warnings, reviews, search, next}` — see preflight.md |
 | `fb_save_override(js_code, note)` / `fb_override()` / `fb_clear_override(note)` | repair the extractor (JS run after fb_extract.js), show it, remove it |
 | `fb_check_reviews(reviews, diagnostics)` | the same health checks on any list of reviews (no page load) |
@@ -36,7 +38,7 @@ changes its UI (`fb_save_override`).
 
 ## Phase 1 — find the locations (skip if `fb_progress()['locations']` already reached the cap or the task says so)
 1. `fb_search_pages(brand)` → find the brand's official global / country Pages (verified, huge follower counts).
-   Remember their URLs as brand pages (do NOT add them as locations).
+   Record them with `fb_add_brand_pages(...)` (they are NOT locations; see Phase 1b).
 2. On those Pages look for a locations / store list: `fb_open(page + '/locations')`, the Intro / About section,
    "See all" store links. Read child location Pages from the DOM with `js()`.
 3. Search widely, country by country and city by city: `fb_search_pages(f"{brand} {city}")`,
@@ -46,6 +48,16 @@ changes its UI (`fb_save_override`).
    groups, resellers, look-alike businesses, duplicates.
 5. Parse the snippet into address / city / country / category / rating_text and call `fb_add_locations(batch)`
    after every search. Stop when the cap is reached or new searches stop adding locations.
+
+## Phase 1b — the brand's own Pages (a separate section of the report)
+The official brand Pages (e.g. "Lidl", "Lidl България") are NOT locations, but they are reported on their own:
+```python
+fb_add_brand_pages([{'name': 'Lidl България', 'url': 'https://www.facebook.com/lidlbulgaria', 'scope': 'country'}])
+for b in fb_progress()['brand_todo']:
+    print(fb_extract_brand(b['url'], name=b['name']))   # public data + reviews/replies, saved under brand/
+```
+Record them as soon as you identify them (step 1 of Phase 1) and extract them before the locations. Keep the brand
+Pages to the official global and country ones (verified, large follower counts); at most 3.
 
 ## Before Phase 2 — preflight
 If `fb_progress()['preflight']['due']` is true, run `fb_preflight()` (it uses the first saved locations). If it is not

@@ -451,7 +451,7 @@ window.__fbx = (function () {
     var lines = clean(txt(main));
     if (!lines.some(function (l) { return /%|·|последовател|followers/i.test(l); })) { main = document.body; lines = clean(txt(document.body)); }
     var body = lines.join('\n');
-    var LABEL = /^(log in|forgot account\?|влизане|забравен профил\?|още|more|всички|all|информация|about|последователи|followers|снимки|photos|споменавания|mentions|публикации|posts|видеоклипове|videos|reels|събития|events|следване|follow|търсене|search|обадете се сега|call now|съобщение|message|харесване|like|подробности|details|intro|представяне|връзки|links|препоръчани|featured|филтри|filters)$/i;
+    var LABEL = /^(log in|forgot account\?|влизане|забравен профил\?|въведение|още|more|всички|all|информация|about|последователи|followers|снимки|photos|споменавания|mentions|публикации|posts|видеоклипове|videos|reels|събития|events|следване|follow|търсене|search|обадете се сега|call now|съобщение|message|харесване|like|подробности|details|intro|представяне|връзки|links|препоръчани|featured|филтри|filters)$/i;
     var h1 = Array.prototype.filter.call(document.querySelectorAll('h1'), function (h) { return !h.closest('[role="dialog"]'); })[0];
     var name = h1 ? txt(h1).replace(/\s+/g, ' ').trim() : null;
     if (!name) name = lines.filter(function (l) { return !LABEL.test(l); })[0] || null;
@@ -470,13 +470,15 @@ window.__fbx = (function () {
       var cand = more > 0 ? head[more - 1] : null;
       if (cand && cand.length < 50 && !/\d|%|·/.test(cand) && !LABEL.test(cand) && cand !== name) { category = cand; catIdx = more - 1; }
     }
-    var det = lines.findIndex(function (l) { return /^(подробности|details|intro|представяне)$/i.test(l); });
-    var from = Math.max(0, Math.min.apply(null, [catIdx, det].filter(function (x) { return x >= 0; }).concat([0])));
-    if (det >= 0) from = Math.min(det, catIdx >= 0 ? catIdx : det);
+    var det = lines.findIndex(function (l) { return /^(подробности|details|intro|представяне|въведение)$/i.test(l); });
+    // logged-out: "Intro/Въведение" → "Page · category" → address, phone, site;  logged-in: category in the header,
+    // address etc. under "Подробности/Details" further down
+    var from = catIdx >= 0 ? catIdx : 0;
+    if (det >= 0 && (catIdx < 0 || det > catIdx)) from = det;
     var address = null, phone = null, website = null, hours = null;
     for (var j = from; j < Math.min(lines.length, from + 25); j++) {
       var l = lines[j];
-      if (/^(препоръчани|featured|публикации|posts|филтри|filters)$/i.test(l)) break;
+      if (j > from + 1 && /^(препоръчани|featured|публикации|posts|филтри|filters|снимки|photos)$/i.test(l)) break;
       if (!phone && /^[+0(][\d\s()\-]{6,}$/.test(l)) { phone = l; continue; }
       if (!website && /^(https?:\/\/)?[a-z0-9\-]+(\.[a-z0-9\-]+)+(\/\S*)?$/i.test(l) && !/facebook\.com/i.test(l)) { website = l; continue; }
       if (!hours && /^(open now|closed now|отворено|затворено|always open|винаги отворено|opens|отваря|temporarily closed|временно затворено)/i.test(l)) { hours = l; continue; }

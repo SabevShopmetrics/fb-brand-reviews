@@ -23,13 +23,23 @@ def summarize(report: BrandReport) -> dict:
             if k == "facebook_recommend_pct":
                 continue
             total[k] = total.get(k, 0) + (v or 0)
-    return {"locations": len(report.locations), "by_status": statuses, **total}
+    out = {"locations": len(report.locations), "by_status": statuses, **total}
+    if report.brand_sections:
+        out["brand_pages"] = [
+            {"name": b.location.name, "url": b.location.url, "status": b.status, "recommend_pct": b.recommend_pct,
+             "review_total": b.review_total, "reviews_extracted": len(b.reviews),
+             "page_replies": b.stats()["page_replies"]}
+            for b in report.brand_sections
+        ]
+    return out
 
 
 def write_json(report: BrandReport, path: Path) -> None:
     data = report.model_dump(mode="json")
     for loc, res in zip(data["locations"], report.locations):
         loc["stats"] = res.stats()
+    for b, res in zip(data.get("brand_sections", []), report.brand_sections):
+        b["stats"] = res.stats()
     import json
 
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
@@ -56,6 +66,30 @@ def write_excel(report: BrandReport, path: Path) -> None:
     wb.remove(wb.active)
     yn = {True: "да", False: "не", None: ""}
 
+    def page_rows(items):
+        out = []
+        for loc in items:
+            st = loc.stats()
+            l = loc.location
+            out.append([l.name, l.city, l.country, l.address, l.phone, l.url, loc.status, loc.recommend_pct, loc.review_total, st["reviews"], st["recommends"],
+                        st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
+                        st["reviews_with_page_reply"], st["page_replies"], st["generated"],
+                        st["manual"], st["uncertain"], l.rating_text, loc.notes])
+        return out
+
+    PAGE_HEADERS = ["Страница", "Град", "Държава", "Адрес", "Телефон", "Facebook", "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват", "Не препоръчват",
+                    "Ревюта с коментари", "Коментари (брой по FB)",
+                    "Ревюта с отговор от страницата", "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Рейтинг",
+                    "Бележки"]
+    PAGE_WIDTHS = [32, 14, 12, 30, 14, 40, 14, 11, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40]
+    if report.brand_sections:
+        _sheet(wb, "Бранд", PAGE_HEADERS, page_rows(report.brand_sections), PAGE_WIDTHS)
+
+    def label(loc):
+        return f"[Бранд] {loc.location.name}" if loc.is_brand else loc.location.name
+
+    every = list(report.brand_sections) + list(report.locations)
+
     rows = []
     for loc in report.locations:
         st = loc.stats()
@@ -72,28 +106,28 @@ def write_excel(report: BrandReport, path: Path) -> None:
            rows, [32, 14, 12, 30, 14, 40, 14, 11, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40])
 
     rows = []
-    for loc in report.locations:
+    for loc in every:
         for i, rv in enumerate(loc.reviews, 1):
             page = [r for r in rv.replies if r.is_page_reply]
             first = page[0] if page else None
-            rows.append([loc.location.name, i, rv.reviewer, yn[rv.recommends], rv.rating, rv.text, rv.date_text,
+            rows.append([label(loc), i, rv.reviewer, yn[rv.recommends], rv.rating, rv.text, rv.date_text,
                          rv.permalink, rv.comment_count, len(rv.replies),
                          "да" if rv.replies_unavailable else "", first.text if first else "",
                          first.reply_type if first else "", first.confidence if first else None])
     _sheet(wb, "Ревюта",
-           ["Локация", "№", "Автор", "Препоръчва", "Оценка", "Текст", "Дата", "Линк", "Коментари (по FB)",
+           ["Страница", "№", "Автор", "Препоръчва", "Оценка", "Текст", "Дата", "Линк", "Коментари (по FB)",
             "Извлечени отговори", "Коментарите са скрити от Facebook", "Отговор от страницата", "Тип отговор", "Увереност"],
            rows, [28, 5, 22, 11, 8, 60, 12, 40, 10, 10, 12, 60, 13, 10])
 
     rows = []
-    for loc in report.locations:
+    for loc in every:
         for i, rv in enumerate(loc.reviews, 1):
             for rp in rv.replies:
-                rows.append([loc.location.name, i, rv.reviewer, (rv.text or "")[:300], rp.author,
+                rows.append([label(loc), i, rv.reviewer, (rv.text or "")[:300], rp.author,
                              yn[rp.is_page_reply], rp.depth, rp.text, rp.date_text, rp.reply_type, rp.generated_kind,
                              rp.confidence, "; ".join(rp.signals), rp.llm_reason])
     _sheet(wb, "Отговори",
-           ["Локация", "Ревю №", "Автор на ревюто", "Ревю (откъс)", "Автор на отговора", "От страницата", "Ниво",
+           ["Страница", "Ревю №", "Автор на ревюто", "Ревю (откъс)", "Автор на отговора", "От страницата", "Ниво",
             "Отговор", "Дата", "Тип", "Вид генериране", "Увереност", "Сигнали", "Обяснение от модела"],
            rows, [28, 7, 20, 45, 22, 11, 6, 60, 12, 13, 13, 10, 45, 40])
 
@@ -101,7 +135,10 @@ def write_excel(report: BrandReport, path: Path) -> None:
     _sheet(wb, "Обобщение", ["Показател", "Стойност"],
            [["Бранд", report.brand], ["Генерирано", report.generated_at], ["Модел", report.model],
             ["Метод за класификация", report.classification_method]]
-           + [[k, str(v)] for k, v in s.items()],
+           + [[k, str(v)] for k, v in s.items() if k != "brand_pages"]
+           + [[f"Бранд: {b['name']}", f"{b['recommend_pct']}% препоръка, {b['review_total']} ревюта във FB, "
+                                     f"{b['reviews_extracted']} извлечени, {b['page_replies']} отговора от страницата"]
+              for b in s.get("brand_pages", [])],
            [34, 70])
-    wb.move_sheet("Обобщение", offset=-3)
+    wb.move_sheet("Обобщение", offset=-(len(wb.sheetnames) - 1))
     wb.save(path)

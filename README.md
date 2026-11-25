@@ -178,7 +178,8 @@ cp .env.example .env
 - `report.json` — **единният отговор**: `locations[]`, всяка с `location` (име, адрес, град, URL), `status`,
   `stats`, `reviews[]` → `replies[]` (автор, текст, дата, ниво, `is_page_reply`, `reply_type`,
   `generated_kind`, `confidence`, `signals`, `llm_reason`)
-- `report.xlsx` — листове „Обобщение“, „Локации“, „Ревюта“, „Отговори“
+- `report.xlsx` — листове „Обобщение“, „Бранд“ (официалните страници на бранда, отделно), „Локации“, „Ревюта“,
+  „Отговори“ (редовете на бранда са с „[Бранд]“)
 - `workspace/results/*.json` — резултат по локация, `workspace/locations.json` — намерените локации (за `--resume`)
 
 Статуси на локация: `ok`, `partial` (заредени са по-малко ревюта, отколкото показва страницата — бележката казва колко), `no_reviews`, `reviews_disabled`, `login_required`, `blocked`, `not_found`, `error`.

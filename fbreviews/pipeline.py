@@ -90,8 +90,8 @@ def promote_partials(ws: Path) -> None:
         f.unlink()
 
 
-def load_results(run_dir: Path) -> list[LocationResult]:
-    """Agent result files → LocationResult, in the order of locations.json."""
+def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]:
+    """Agent result files → LocationResult, in the order of locations.json (folder "brand": the brand's own Pages)."""
     ws = run_dir / "workspace"
     order = {}
     try:
@@ -99,9 +99,10 @@ def load_results(run_dir: Path) -> list[LocationResult]:
             order[normalize_page_url(l.get("url", "")) or l.get("url")] = i
     except (OSError, ValueError):
         pass
-    promote_partials(ws)
+    if folder == "results":
+        promote_partials(ws)
     out = []
-    for f in sorted((ws / "results").glob("*.json")):
+    for f in sorted((ws / folder).glob("*.json")) if (ws / folder).exists() else []:
         if f.stem.startswith("_"):
             continue
         try:
@@ -114,7 +115,8 @@ def load_results(run_dir: Path) -> list[LocationResult]:
             out.append(LocationResult(location=LocationPage(**loc), status=status, reviews_url=d.get("reviews_url"),
                                       review_total=int(rt) if isinstance(rt, (int, float)) else None,
                                       recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
-                                      reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or "")))
+                                      reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or ""),
+                                      is_brand=folder == "brand"))
         except Exception as e:
             logger.warning("skipping %s: %s", f.name, e)
     out.sort(key=lambda r: order.get(r.location.url, 10**9))
@@ -134,13 +136,17 @@ def progress_of(run_dir: Path) -> dict:
 
 async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True) -> BrandReport:
     results = load_results(run_dir)
+    brand_results = load_results(run_dir, "brand")
     llm = None
     if use_llm and s.llm_base_url and s.classifier_model:
         llm = {"base_url": s.llm_base_url, "api_key": s.llm_api_key, "model": s.classifier_model}
-    method = await classify_replies(results, brand, llm=llm)
+    # brand Pages and locations are classified together: a template reply shared by both is one template
+    method = await classify_replies(brand_results + results, brand, llm=llm)
     meta = json.loads((run_dir / "meta.json").read_text()) if (run_dir / "meta.json").exists() else {}
-    report = BrandReport(brand=brand, model=s.llm_model, locations=results, classification_method=method,
-                         brand_pages=meta.get("brand_pages", []))
+    brand_urls = [r.location.url for r in brand_results]
+    report = BrandReport(brand=brand, model=s.llm_model, locations=results, brand_sections=brand_results,
+                         classification_method=method,
+                         brand_pages=sorted(set(meta.get("brand_pages", [])) | set(brand_urls)))
     report.summary = summarize(report)
     write_json(report, run_dir / "report.json")
     write_excel(report, run_dir / "report.xlsx")

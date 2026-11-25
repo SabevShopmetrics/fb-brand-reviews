@@ -49,6 +49,9 @@ pages, daily page cap) to keep the Facebook account safe: a few minutes per loca
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.
+- The brand's own Pages (e.g. "Lidl България") are a separate section: `brand_sections` in report.json, sheet
+  "Бранд" in Excel. Report them first and apart ("Бранд: 71% препоръка, 1200 ревюта"), then the locations; never
+  count a brand Page as a location.
 - Facebook's own total per location is `review_total` in each location of `report.json` (also in its `stats`).
   Take numbers only from report.json, location by location; never quote totals from memory or from another location.
 - Replies: under many reviews Facebook shows the Page's own reply as a preview; the tool expands it ("Вижте

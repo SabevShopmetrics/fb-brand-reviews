@@ -242,7 +242,7 @@ def fb_add_locations(items):
     """Merge location dicts {name, url, address, city, country, category, rating_text, source} into locations.json.
     Returns {'added': n, 'total': n}. URLs are normalized and deduplicated; the cap is max_locations."""
     locs = _read("locations.json", [])
-    known = {l["url"] for l in locs}
+    known = {l["url"] for l in locs} | {b["url"] for b in _read("brand_pages.json", [])}
     added = 0
     for it in items or []:
         url = fb_page_url((it or {}).get("url", ""))
@@ -381,7 +381,7 @@ def _guard(res, max_reviews):
     return res
 
 
-def fb_save_result(location, result, notes=""):
+def fb_save_result(location, result, notes="", folder="results"):
     """Save one finished location (call it for EVERY location, also for no_reviews / errors)."""
     loc = location if isinstance(location, dict) else {"url": str(location)}
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
@@ -389,11 +389,13 @@ def fb_save_result(location, result, notes=""):
            "reviews_url": result.get("reviews_url"), "reviews": result.get("reviews", []),
            "review_total": (result.get("diagnostics") or {}).get("review_total"),
            "notes": "; ".join(x for x in (result.get("notes", ""), notes) if x)}
-    _write(f"results/{fb_slug(url)}.json", out)
+    if result.get("recommend_pct") is not None:
+        out["recommend_pct"] = result["recommend_pct"]
+    _write(f"{folder}/{fb_slug(url)}.json", out)
     partial = _WS / "results" / f"_partial_{fb_slug(url)}.json"
     if partial.exists():
         partial.unlink()
-    return {"saved": f"results/{fb_slug(url)}.json", "status": out["status"], "reviews": len(out["reviews"])}
+    return {"saved": f"{folder}/{fb_slug(url)}.json", "status": out["status"], "reviews": len(out["reviews"])}
 
 
 def fb_progress():
@@ -402,7 +404,10 @@ def fb_progress():
     done = {p.stem for p in (_WS / "results").glob("*.json") if not p.stem.startswith("_")} if (_WS / "results").exists() else set()
     todo = [l for l in locs if fb_slug(l["url"]) not in done]
     pf = _read(PREFLIGHT_FILE, {})
+    brands = fb_brand_pages()
+    bdone = {p.stem for p in (_WS / "brand").glob("*.json")} if (_WS / "brand").exists() else set()
     return {"locations": len(locs), "done": len(locs) - len(todo), "todo": todo, "stopped": fb_stopped(),
+            "brand_pages": len(brands), "brand_todo": [b for b in brands if fb_slug(b["url"]) not in bdone],
             "preflight": {"healthy": pf.get("healthy"), "at": pf.get("at"), "failed": pf.get("failed", []),
                           "due": (not LITE) and _preflight_due(pf), "unhealthy_streak": pf.get("unhealthy_streak", 0)},
             "override_active": bool(_override_src().strip())}
@@ -799,7 +804,7 @@ def fb_page_summary(url):
     return s
 
 
-def fb_save_summary(location, summary):
+def fb_save_summary(location, summary, folder="results"):
     """Save one location in lite mode (results/<slug>.json, status 'summary_only'; or the failure state)."""
     loc = dict(location if isinstance(location, dict) else {"url": str(location)})
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
@@ -818,6 +823,60 @@ def fb_save_summary(location, summary):
     out = {"location": {**loc, "url": url}, "status": status, "reviews_url": None, "reviews": reviews,
            "review_total": summary.get("review_total"), "recommend_pct": summary.get("recommend_pct"),
            "notes": "lite mode: public Page data without a Facebook login" + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
-    _write(f"results/{fb_slug(url)}.json", out)
-    return {"saved": f"results/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
+    _write(f"{folder}/{fb_slug(url)}.json", out)
+    return {"saved": f"{folder}/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
             "review_total": summary.get("review_total")}
+
+
+
+# ------------------------------------------------------------------ the brand's own Pages (a separate section)
+def fb_add_brand_pages(items):
+    """Record the brand's official Pages (global / country), [{name, url, scope}] → brand_pages.json. They are a
+    separate section of the report and are never counted as locations."""
+    pages = _read("brand_pages.json", [])
+    known = {b["url"] for b in pages}
+    added = 0
+    for it in items or []:
+        url = fb_page_url((it or {}).get("url", ""))
+        if not url or url in known:
+            continue
+        pages.append({"name": it.get("name"), "url": url, "scope": it.get("scope")})
+        known.add(url)
+        added += 1
+    _write("brand_pages.json", pages)
+    # a brand page that slipped into the location list is moved out of it
+    locs = _read("locations.json", [])
+    kept = [l for l in locs if l.get("url") not in known]
+    if len(kept) != len(locs):
+        _write("locations.json", kept)
+    return {"added": added, "total": len(pages)}
+
+
+def fb_brand_pages():
+    return _read("brand_pages.json", [])
+
+
+def fb_extract_brand(url, name=None, max_reviews=None):
+    """The brand's own Page as its own section (brand/<slug>.json): its public data (category, followers, address,
+    website, % recommend, number of reviews) and — when logged in (not lite) — its reviews with the Page's replies,
+    exactly like a location. Returns what was saved, or the stop state."""
+    page = fb_page_url(url) or url
+    summary = fb_page_summary(page)
+    if summary.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
+        return {"status": summary["state"], "url": page, "reason": summary.get("reason")}
+    loc = {"name": summary.get("name") or name or page, "url": page, "source": "brand_page"}
+    for k in ("category", "address", "phone", "website", "followers"):
+        if summary.get(k):
+            loc[k] = summary[k]
+    if LITE or summary.get("state") != "ok":
+        return fb_save_summary(loc, summary, folder="brand")
+    res = _extract_reviews(page, max_reviews=max_reviews, name=loc["name"])
+    if res.get("status") in ("login_required", "blocked", "stopped", "cap_reached"):
+        return res
+    if not res.get("reviews"):  # reviews switched off or not shown: keep the public data
+        return fb_save_summary(loc, summary, folder="brand")
+    res["recommend_pct"] = summary.get("recommend_pct")
+    diag = dict(res.get("diagnostics") or {})
+    diag["review_total"] = diag.get("review_total") or summary.get("review_total")
+    res["diagnostics"] = diag
+    return fb_save_result(loc, res, folder="brand")

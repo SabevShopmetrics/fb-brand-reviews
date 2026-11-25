@@ -86,6 +86,7 @@ class LocationResult(BaseModel):
     recommend_pct: int | None = None  # Facebook's own "% recommend" for the Page
     reviews: list[Review] = Field(default_factory=list)
     notes: str = ""
+    is_brand: bool = False  # the brand's own Page (global / country), reported apart from the locations
     scraped_at: str = Field(default_factory=now_iso)
 
     def stats(self) -> dict:
@@ -114,6 +115,7 @@ class BrandReport(BaseModel):
     generated_at: str = Field(default_factory=now_iso)
     model: str | None = None
     brand_pages: list[str] = Field(default_factory=list)
+    brand_sections: list[LocationResult] = Field(default_factory=list)  # the brand's own Pages, same data as a location
     locations: list[LocationResult] = Field(default_factory=list)
     summary: dict = Field(default_factory=dict)
     classification_method: str = ""

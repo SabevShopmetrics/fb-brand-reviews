@@ -12,6 +12,8 @@ Read `preflight.md` only for its safety rules; its review checks do not apply he
 | Helper | What it does |
 |---|---|
 | `fb_progress()` | `{locations, done, todo, stopped}` — call FIRST: the run may be a continuation |
+| `fb_add_brand_pages([{name, url, scope}])` | record the brand's official Pages (global / country): a separate section, never locations |
+| `fb_extract_brand(url, name=...)` | the brand Page as its own section: public data |
 | `fb_web_search(query, pages=1)` | Bing results pointing to facebook.com: `[{title, url, page_url, snippet}]`, or `{'error':'search_challenge'}` |
 | `fb_add_locations([{name, url, address, city, country, category, source}])` | merge into locations.json (dedupe, cap) |
 | `fb_page_summary(url)` | public data of one Page → `{name, category, address, phone, website, recommend_pct, review_total, …, state}` |
@@ -28,6 +30,16 @@ Read `preflight.md` only for its safety rules; its review checks do not apply he
 3. Broad searches help too: `fb_web_search(f'site:facebook.com "{brand}" {city}')` for the big cities.
 4. `fb_add_locations(batch)` after every few finds. If `fb_web_search` returns `search_challenge`, stop searching
    (do not solve it) and go on with the locations you have; say so in notes.
+
+## Phase 1b — the brand's own Pages (a separate section of the report)
+The official brand Pages (e.g. "Lidl", "Lidl България") are not locations, but they are reported on their own.
+Find them on the brand's website (its Facebook link) or with `fb_web_search(f'{brand} official facebook')`, then:
+```python
+fb_add_brand_pages([{'name': 'Lidl България', 'url': 'https://www.facebook.com/lidlbulgaria', 'scope': 'country'}])
+for b in fb_progress()['brand_todo']:
+    print(fb_extract_brand(b['url'], name=b['name']))   # public data, saved under brand/
+```
+At most 3 brand Pages (global and country).
 
 ## Phase 2: every location
 ```python

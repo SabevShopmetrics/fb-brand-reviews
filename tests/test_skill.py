@@ -342,3 +342,47 @@ def test_lite_summary_saved(tmp_path):
     (tmp_path / "workspace" / "results" / "happymorskagara.json").write_text(json.dumps(d))
     out = load_results(tmp_path)
     assert out[0].status == "summary_only" and out[0].recommend_pct == 94 and out[0].location.phone == "0700 20 888"
+
+
+def test_brand_pages_separate_from_locations(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    m.fb_add_locations([{"name": "Lidl Varna", "url": "https://www.facebook.com/lidlvarna"},
+                        {"name": "Lidl България", "url": "https://www.facebook.com/lidlbulgaria"}])
+    r = m.fb_add_brand_pages([{"name": "Lidl България", "url": "https://www.facebook.com/lidlbulgaria/", "scope": "country"}])
+    assert r == {"added": 1, "total": 1}
+    assert [l["url"] for l in m.fb_locations()] == ["https://www.facebook.com/lidlvarna"]  # moved out of locations
+    assert m.fb_add_locations([{"name": "x", "url": "https://www.facebook.com/lidlbulgaria"}])["added"] == 0
+    p = m.fb_progress()
+    assert p["brand_pages"] == 1 and len(p["brand_todo"]) == 1 and p["locations"] == 1
+    m.fb_save_summary({"name": "Lidl България", "url": "https://www.facebook.com/lidlbulgaria", "source": "brand_page"},
+                      {"state": "ok", "category": "Supermarket", "recommend_pct": 71, "review_total": 1200}, folder="brand")
+    assert m.fb_progress()["brand_todo"] == []
+
+    ws = tmp_path / "workspace"
+    (ws / "brand").mkdir(parents=True, exist_ok=True)
+    (ws / "brand" / "lidlbulgaria.json").write_text((tmp_path / "brand" / "lidlbulgaria.json").read_text())
+    brands = load_results(tmp_path, "brand")
+    assert len(brands) == 1 and brands[0].is_brand and brands[0].recommend_pct == 71
+
+
+def test_brand_section_in_excel(tmp_path):
+    from openpyxl import load_workbook
+    from fbreviews.export import summarize, write_excel, write_json
+    from fbreviews.models import BrandReport, LocationPage, LocationResult, Review
+
+    brand = LocationResult(location=LocationPage(name="Lidl България", url="https://www.facebook.com/lidlbulgaria"),
+                           status="summary_only", recommend_pct=71, review_total=1200, is_brand=True,
+                           reviews=[Review(reviewer="A", recommends=True, text="ok")])
+    loc = LocationResult(location=LocationPage(name="Lidl Varna", url="https://www.facebook.com/lidlvarna"),
+                         status="summary_only", recommend_pct=88, review_total=40)
+    rep = BrandReport(brand="Lidl", locations=[loc], brand_sections=[brand])
+    rep.summary = summarize(rep)
+    assert rep.summary["locations"] == 1 and rep.summary["brand_pages"][0]["recommend_pct"] == 71
+    write_excel(rep, tmp_path / "r.xlsx")
+    write_json(rep, tmp_path / "r.json")
+    wb = load_workbook(tmp_path / "r.xlsx")
+    assert wb.sheetnames[0] == "Обобщение" and "Бранд" in wb.sheetnames and "Локации" in wb.sheetnames
+    assert wb["Бранд"]["A2"].value == "Lidl България" and wb["Локации"]["A2"].value == "Lidl Varna"
+    assert wb["Ревюта"]["A2"].value == "[Бранд] Lidl България"
+    data = json.loads((tmp_path / "r.json").read_text())
+    assert data["brand_sections"][0]["stats"]["facebook_recommend_pct"] == 71 and len(data["locations"]) == 1

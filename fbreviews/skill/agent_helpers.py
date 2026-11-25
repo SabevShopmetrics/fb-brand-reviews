@@ -401,7 +401,15 @@ def _collect(opts, reset=False):
     sw = {}
     if time.time() < deadline:   # second slow pass in the same page: late reply previews, expanded texts
         _say("  второ минаване по списъка за отговорите на страницата…")
-        sw = _run("__fbx.sweep(" + json.dumps({**opts, "sweepMaxMs": int(max(30, min(1800, deadline - time.time())) * 1000)}) + ")") or {}
+        first = True
+        while time.time() < deadline:   # short chunks: one js() call must finish within ~25 s
+            sw = _run("__fbx.sweep(" + json.dumps({**opts, "restart": first, "chunkMs": 12000,
+                                                    "maxMs": int(max(30, min(1800, deadline - time.time())) * 1000)}) + ")") or {}
+            first = False
+            if not isinstance(sw, dict):
+                sw = {}
+            if sw.get("done") or not sw:
+                break
     data = _run("__fbx.extract(" + json.dumps(opts) + ")") or {}
     diag = data.get("diagnostics", {}) or {}
     diag["sweep"] = sw

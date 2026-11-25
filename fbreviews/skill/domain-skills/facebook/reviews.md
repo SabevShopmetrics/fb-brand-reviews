@@ -49,6 +49,9 @@ changes its UI (`fb_save_override`).
 5. Parse the snippet into address / city / country / category / rating_text and call `fb_add_locations(batch)`
    after every search. Stop when the cap is reached or new searches stop adding locations.
 
+**Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
+never repeat a query. Then go on: extracting is the goal, not searching.
+
 ## Phase 1b — the brand's own Pages (a separate section of the report)
 The official brand Pages (e.g. "Lidl", "Lidl България") are NOT locations, but they are reported on their own:
 ```python

@@ -299,23 +299,35 @@ window.__fbx = (function () {
   // under reviews with a delay and empties reviews that leave the viewport, so one pass misses some. Walk from the
   // top to the end, expanding "Вижте повече" and reading at every step; the accumulator keeps the richest version.
   async function sweep(opts) {
+    // Runs in short chunks (each js() call must return within ~25 s): call it again until `done`. It stops once the
+    // last review has been passed — not at the very end of the page, which Facebook keeps extending.
     opts = opts || {};
-    var delay = opts.delayMs || 1200, maxMs = opts.sweepMaxMs || 240000, t0 = Date.now(), bottomHits = 0;
-    window.scrollTo(0, 0);
-    await sleep(delay);
-    while (Date.now() - t0 < maxMs) {
+    var delay = opts.delayMs || 1200, budget = opts.chunkMs || 12000, t0 = Date.now();
+    var st = window.__fbxSweep;
+    if (!st || opts.restart) {
+      st = window.__fbxSweep = { started: Date.now(), hits: 0 };
+      window.scrollTo(0, 0);
+      await sleep(delay);
+    }
+    var done = false, reason = null;
+    while (Date.now() - t0 < budget) {
       if (F.clickExpanders()) await sleep(delay);
       F.accumulate(opts);
-      await sleep(500);                        // previews that render late
+      await sleep(400);                        // previews that render late
       F.accumulate(opts);
+      var ps = F.posts(), last = ps[ps.length - 1];
+      var pastLast = !last || last.getBoundingClientRect().bottom < window.innerHeight * 0.4;
       var atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 80;
-      if (atEnd && ++bottomHits >= 2) break;
+      if (pastLast || atEnd) {
+        if (++st.hits >= 2) { done = true; reason = pastLast ? 'past_last_review' : 'page_end'; break; }
+      } else st.hits = 0;
+      if (opts.maxMs && Date.now() - st.started > opts.maxMs) { done = true; reason = 'time_limit'; break; }
       window.scrollBy(0, Math.round(window.innerHeight * 0.6));
       await sleep(delay);
     }
     var acc = F.accumulate(opts);
     var withReplies = acc.order.filter(function (k) { return (acc.map[k].replies || []).length; }).length;
-    return { reviews: acc.order.length, with_replies: withReplies, ms: Date.now() - t0 };
+    return { done: done, reason: reason, reviews: acc.order.length, with_replies: withReplies, ms: Date.now() - st.started };
   }
 
   async function extract(opts) {

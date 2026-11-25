@@ -31,6 +31,9 @@ Read `preflight.md` only for its safety rules; its review checks do not apply he
 4. `fb_add_locations(batch)` after every few finds. If `fb_web_search` returns `search_challenge`, stop searching
    (do not solve it) and go on with the locations you have; say so in notes.
 
+**Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
+never repeat a query. Then go on: extracting is the goal, not searching.
+
 ## Phase 1b — the brand's own Pages (a separate section of the report)
 The official brand Pages (e.g. "Lidl", "Lidl България") are not locations, but they are reported on their own.
 Find them on the brand's website (its Facebook link) or with `fb_web_search(f'{brand} official facebook')`, then:

@@ -110,8 +110,9 @@ def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_
     pre = aw / "domain-skills" / "facebook" / "preflight.md"
     lines = [
         f'Brand: "{brand}". Collect the Facebook reviews (and their comment counts) for every physical location '
-        f"of this brand ({_scope(max_locations)}), one location at a time. Collect EVERYTHING: all locations you can "
-        "find and all of their reviews; do not stop early.",
+        f"of this brand ({_scope(max_locations)}), one location at a time. Collect EVERYTHING: all locations and all "
+        "of their reviews. Searching: never repeat a query; stop searching once 3 searches in a row add no new "
+        "location, then extract every location.",
         f"Skill: read {pre} first (print(open(r'{pre}').read())): it defines the output we want and the "
         f"preflight / self-repair. Then read {skill} (print(open(r'{skill}').read())) and follow both.",
         "Start with fb_progress(): files from earlier rounds are kept, continue from there. If its "

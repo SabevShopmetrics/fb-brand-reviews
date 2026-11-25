@@ -406,3 +406,18 @@ def test_search_cache_and_close(tmp_path):
     m.fb_add_locations([])                           # third search added nothing -> closed
     r = m.fb_search_pages("Дивака Русе", scrolls=1)
     assert isinstance(r, dict) and r["error"] == "search_closed" and len(loads) == 3
+
+
+def test_search_closes_when_no_location_found(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    loads = []
+    m.fb_open = lambda url: (loads.append(url), {"ok": True, "state": "ok"})[1]
+
+    class H:
+        def js(self, expr):
+            return [] if "searchResults" in expr else None
+    m._h = lambda: H()
+    for i in range(6):                                # 6 searches, never a location
+        assert isinstance(m.fb_search_pages(f"Щастливеца {i}", scrolls=1), list)
+    r = m.fb_search_pages("Щастливеца Румъния", scrolls=1)
+    assert isinstance(r, dict) and r["error"] == "search_closed" and "brand_todo" in r["message"] and len(loads) == 6

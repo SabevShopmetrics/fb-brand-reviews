@@ -38,7 +38,7 @@ A same-name business in another city or country without that proof is NOT added.
 category, address) and, when unsure, open the Page once and look for the brand's link.
 
 **Stop searching** when 3 searches in a row add no new location (`fb_add_locations` returns `added: 0`), and
-never repeat a query. Then go on: extracting is the goal, not searching.
+never repeat a query. Then go on: extracting is the goal, not searching. If 6 searches find no location Page at all, the brand has no Page per location (common for a chain with one Page): searching closes by itself (`search_closed`); do Phase 1b (the brand Page) and finish. Never search other countries for a brand that clearly operates in one country only.
 
 ## Phase 1b — the brand's own Pages (a separate section of the report)
 The official brand Pages (e.g. "Lidl", "Lidl България") are not locations, but they are reported on their own.

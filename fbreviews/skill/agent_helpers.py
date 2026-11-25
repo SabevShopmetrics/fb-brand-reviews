@@ -271,6 +271,9 @@ def fb_js(expression):
 
 # ------------------------------------------------------------------ discovery
 SEARCH_IDLE_LIMIT = int(_CFG.get("search_idle_limit", 3))
+# with NO location found yet the 3-search rule does not apply (don't give up before the first find), but this cap
+# does: many brands (e.g. one restaurant chain with a single Page) have no Page per location at all
+SEARCH_EMPTY_LIMIT = int(_CFG.get("search_empty_limit", 6))
 
 
 def _search_state():
@@ -296,6 +299,13 @@ def _search_gate(query, kind):
         return st, key, {"error": "search_closed", "message": "Search is closed for this run: the last searches added no "
                          "new location. Go to Phase 1b / Phase 2 now: extract the brand Page(s) and every location in "
                          "fb_progress()['todo']."}
+    if not fb_locations() and st.get("idle", 0) >= SEARCH_EMPTY_LIMIT:
+        _say(f"  {SEARCH_EMPTY_LIMIT} търсения без нито една страница на локация — брандът явно няма отделни страници "
+             "по обекти; спирам търсенето и вадя страницата на бранда")
+        return st, key, {"error": "search_closed", "message": f"Search is closed for this run: {SEARCH_EMPTY_LIMIT} searches "
+                         "found no location Page. This brand most likely has no Page per location. Do Phase 1b now: "
+                         "record the brand's official Page(s) with fb_add_brand_pages and extract every one in "
+                         "fb_progress()['brand_todo'], then finish (0 locations is a valid result; say so in notes)."}
     return st, key, None
 
 

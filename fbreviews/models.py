@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ReplyType = Literal["generated", "manual", "uncertain", "not_page_reply"]
-LocationStatus = Literal["ok", "partial", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"]
+LocationStatus = Literal["ok", "partial", "summary_only", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"]
 
 
 def now_iso() -> str:
@@ -23,6 +23,9 @@ class LocationPage(BaseModel):
     city: str | None = None
     country: str | None = None
     category: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    followers: str | None = None
     rating_text: str | None = Field(default=None, description="e.g. '4.3 (120 reviews)' or '87% recommend' if shown")
     source: str | None = Field(default=None, description="Where it was found: locations_tab | search | map | other")
 
@@ -80,6 +83,7 @@ class LocationResult(BaseModel):
     status: LocationStatus
     reviews_url: str | None = None
     review_total: int | None = None  # Facebook's own count for the Page ("94% препоръка (522 отзива)")
+    recommend_pct: int | None = None  # Facebook's own "% recommend" for the Page
     reviews: list[Review] = Field(default_factory=list)
     notes: str = ""
     scraped_at: str = Field(default_factory=now_iso)
@@ -89,6 +93,7 @@ class LocationResult(BaseModel):
         page = [r for r in replies if r.is_page_reply]
         return {
             "facebook_review_total": self.review_total,
+            "facebook_recommend_pct": self.recommend_pct,
             "reviews": len(self.reviews),
             "recommends": sum(1 for r in self.reviews if r.recommends is True),
             "not_recommends": sum(1 for r in self.reviews if r.recommends is False),

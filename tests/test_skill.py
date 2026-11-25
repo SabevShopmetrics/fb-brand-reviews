@@ -305,3 +305,40 @@ def test_counts_only_branch_reports_partial(fake):
     assert res["status"] == "suspect" and res["fallback_status"] == "partial" and "coverage" in res["health"]["failed"]
     # preflight flags the same shortfall (80% rule)
     assert m.fb_check_reviews([_review(i) for i in range(14)], {"review_total": 522}, max_reviews=20)["failed"] == ["coverage"]
+
+
+def test_reply_warnings_never_fail(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    good_reply = {"author": "Zara A", "text": "Благодарим за отзива!", "truncated": False, "depth": 1}
+    good = [_review(i, comment_count=1, replies=[dict(good_reply)]) for i in range(10)]
+    h = m.fb_check_reviews(good, {"review_total": 10})
+    assert h["healthy"] is True and not [w for w in h["warnings"] if w.startswith("replies")]
+    assert h["stats"]["replies"]["replies"] == 10 and h["stats"]["replies"]["reviews_with_replies"] == 10
+
+    broken = [_review(i, comment_count=1, replies=[
+        {"author": None, "text": "от автора Благодарим … Вижте повече", "truncated": True, "depth": 1},
+        {"author": "Zara A", "text": "", "truncated": False, "depth": 1}]) for i in range(10)]
+    h = m.fb_check_reviews(broken, {"review_total": 10})
+    assert h["healthy"] is True  # replies only warn
+    w = " | ".join(h["warnings"])
+    for part in ("cut off", "no text", "no author", "author badge", "end with", "more replies than"):
+        assert part in w, part
+    assert h["stats"]["replies"]["badge_in_text"] == 10 and h["stats"]["replies"]["truncated"] == 0.5
+
+
+def test_lite_summary_saved(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    loc = {"name": "Happy Morska Gara", "url": "https://www.facebook.com/HappyMorskaGara"}
+    summary = {"state": "ok", "name": "Happy Bar & Grill (Morska Gara Varna)", "category": "European Restaurant",
+               "address": "Sea Garden, Varna, Bulgaria", "phone": "0700 20 888", "website": "happy.bg",
+               "followers": "3.1K", "recommend_pct": 94, "review_total": 522, "first_review": None}
+    r = m.fb_save_summary(loc, summary)
+    assert r["status"] == "summary_only" and r["recommend_pct"] == 94
+    d = json.loads((tmp_path / "results" / "happymorskagara.json").read_text())
+    assert d["review_total"] == 522 and d["location"]["phone"] == "0700 20 888"
+    assert m.fb_save_summary(loc, {"state": "not_found"})["status"] == "not_found"
+
+    (tmp_path / "workspace" / "results").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "workspace" / "results" / "happymorskagara.json").write_text(json.dumps(d))
+    out = load_results(tmp_path)
+    assert out[0].status == "summary_only" and out[0].recommend_pct == 94 and out[0].location.phone == "0700 20 888"

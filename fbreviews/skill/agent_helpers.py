@@ -42,6 +42,11 @@ MAX_LOCATIONS = int(_CFG.get("max_locations", 200))
 # Facebook does not show comment threads under reviews (recommendations) to viewers: only the count is collected.
 # True would open every review with comments to try anyway (one extra page load each).
 OPEN_THREADS = bool(_CFG.get("open_threads", False))
+# Lite mode: a fresh browser with NO Facebook login. Only the public Page data is read (fb_page_summary); the login
+# dialog Facebook shows to visitors is expected and is not a reason to stop (a redirect to /login still is).
+LITE = bool(_CFG.get("lite", False))
+SEARCH_CHALLENGE = re.compile(r"(bots use|confirm this search was made by a human|verify you are human|потвърдете, че сте "
+                              r"човек|unusual traffic|captcha|are you a robot)", re.I)
 SCROLL_MAX_S = float(_CFG.get("scroll_max_s", 900))  # at most this long scrolling one reviews tab
 
 # Preflight / self-repair (see domain-skills/facebook/preflight.md).
@@ -51,7 +56,9 @@ PREFLIGHT_MAX_AGE_H = float(_CFG.get("preflight_max_age_h", 6))
 # Thresholds of a healthy extraction. coverage_* = reviews read / min(page's own total, max_reviews).
 HEALTH = {"coverage_min": 0.8, "coverage_min_run": 0.6, "over_total_factor": 1.2, "empty_text_max": 0.3,
           "null_verdict_max": 0.2, "missing_permalink_max": 0.3, "missing_reviewer_max": 0.2,
-          "duplicate_max": 0.1, "missing_date_warn": 0.5, "min_sample": 5, "comment_count_warn_sample": 15}
+          "duplicate_max": 0.1, "missing_date_warn": 0.5, "min_sample": 5, "comment_count_warn_sample": 15,
+          "reply_truncated_warn": 0.2, "reply_empty_warn": 0.2, "reply_no_author_warn": 0.2,
+          "reply_over_count_warn": 0.1}
 HEALTH.update(_CFG.get("health", {}) or {})
 # The output contract: every review must have these keys with these types (None = "not shown / unknown").
 CONTRACT = {"reviewer": (str, type(None)), "recommends": (bool, type(None)), "rating": (int, type(None)),
@@ -194,6 +201,8 @@ def fb_open(url):
     pace["last"] = time.time()
     _write("pace.json", pace)
     state = h.js(_JS + "\n__fbx.pageState()") if _JS else {"state": "ok"}  # bundled check only, never overridden
+    if LITE and state.get("state") == "login_required" and "/login" not in (state.get("url") or ""):
+        state = {**state, "state": "ok", "logged_out": True}
     if state.get("state") in ("login_required", "blocked"):
         _stop(f"{state['state']} at {url}")
     return {"ok": state.get("state") == "ok", **state}
@@ -395,7 +404,7 @@ def fb_progress():
     pf = _read(PREFLIGHT_FILE, {})
     return {"locations": len(locs), "done": len(locs) - len(todo), "todo": todo, "stopped": fb_stopped(),
             "preflight": {"healthy": pf.get("healthy"), "at": pf.get("at"), "failed": pf.get("failed", []),
-                          "due": _preflight_due(pf), "unhealthy_streak": pf.get("unhealthy_streak", 0)},
+                          "due": (not LITE) and _preflight_due(pf), "unhealthy_streak": pf.get("unhealthy_streak", 0)},
             "override_active": bool(_override_src().strip())}
 
 
@@ -483,7 +492,48 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
         leaks = sum(1 for r in rv_ok if r.get("header") and r.get("text") and r["header"][:40] in r["text"])
         if leaks > n * 0.3:
             warnings.append(f"{leaks} review text(s) contain the header line (verdict text leaks into the review)")
+        warnings += _reply_warnings(rv_ok, stats)
     return {"healthy": not failed, "failed": failed, "warnings": warnings, "stats": stats, "details": details}
+
+
+_REPLY_BADGE = re.compile(r"^(от автора|автор|author|by the author|top fan|топ фен)\b", re.I)
+_REPLY_MORE = re.compile(r"(вижте повече|виж още|see more|read more)\s*$", re.I)
+
+
+def _reply_warnings(reviews, stats):
+    """Warnings (never failures) about the Page's replies shown under reviews; fills stats['replies']."""
+    reps = [c for r in reviews for c in (r.get("replies") or [])]
+    bad = sum(1 for c in reps if not isinstance(c, dict))
+    reps = [c for c in reps if isinstance(c, dict)]
+    m = len(reps)
+    counted = [r for r in reviews if isinstance(r.get("comment_count"), int)]
+    over = sum(1 for r in counted if len(r.get("replies") or []) > r["comment_count"])
+    st = {"replies": m, "reviews_with_replies": sum(1 for r in reviews if r.get("replies")),
+          "truncated": _share(sum(1 for c in reps if c.get("truncated")), m),
+          "empty_text": _share(sum(1 for c in reps if not (c.get("text") or "").strip()), m),
+          "no_author": _share(sum(1 for c in reps if not (c.get("author") or "").strip()), m),
+          "badge_in_text": sum(1 for c in reps if _REPLY_BADGE.match((c.get("text") or "").strip())),
+          "see_more_in_text": sum(1 for c in reps if _REPLY_MORE.search((c.get("text") or "").strip())),
+          "more_than_counted": over}
+    stats["replies"] = st
+    out = []
+    if bad:
+        out.append(f"replies: {bad} entr(y/ies) are not objects")
+    if not m:
+        return out
+    if st["truncated"] > HEALTH["reply_truncated_warn"]:
+        out.append(f"replies: {st['truncated']:.0%} still cut off at 'See more / Вижте повече' (check re.EXPAND / sweep)")
+    if st["empty_text"] > HEALTH["reply_empty_warn"]:
+        out.append(f"replies: {st['empty_text']:.0%} have no text (check parseComment / textBlocks)")
+    if st["no_author"] > HEALTH["reply_no_author_warn"]:
+        out.append(f"replies: {st['no_author']:.0%} have no author (check labelAuthor / re.COMMENT_LABEL)")
+    if st["badge_in_text"]:
+        out.append(f"replies: {st['badge_in_text']} text(s) start with the author badge ('от автора' / 'Author')")
+    if st["see_more_in_text"]:
+        out.append(f"replies: {st['see_more_in_text']} text(s) end with 'See more / Вижте повече' (expander text kept)")
+    if counted and over > len(counted) * HEALTH["reply_over_count_warn"]:
+        out.append(f"replies: {over} review(s) have more replies than their comment_count (non-replies parsed as replies?)")
+    return out
 
 
 def fb_check_search(results):
@@ -546,6 +596,9 @@ def fb_preflight(sample_url=None, search_query=None, reload=True, max_reviews=60
     → {healthy: True|False|None, failed, warnings, reviews: {...}, search: {...}, override, next}.
     healthy None: nothing to check yet (no location known) → run it again after the first fb_add_locations.
     Saved to preflight.json; fb_progress() shows it."""
+    if LITE:  # logged-out visitors see no review list: nothing to check or repair here (lite reads public Page data)
+        return {"healthy": None, "lite": True, "note": "lite mode: reviews are not visible logged out; no review checks, "
+                "do not repair the extractor for missing reviews"}
     if fb_stopped():
         return {"healthy": False, "stop": True, "reason": fb_stopped()}
     rep = {"at": datetime.now().isoformat(timespec="seconds"), "override": fb_override(code=False)}
@@ -690,3 +743,76 @@ def fb_clear_override(note):
                 "note": note})
     _write("override_log.json", log)
     return {"cleared": True}
+
+
+# ------------------------------------------------------------------ lite mode (no Facebook login)
+_last_search = [0.0]
+
+
+def fb_web_search(query, pages=1):
+    """Bing web search (no login anywhere) → [{title, url, snippet}] of facebook.com results; or {'error': ...}.
+    Paced (6–12 s between searches). A search-engine challenge (CAPTCHA) is never solved: the result says
+    'search_challenge' and you stop using web search for this run."""
+    from urllib.parse import quote
+
+    h = _h()
+    out, seen = [], set()
+    for page in range(max(1, pages)):
+        gap = random.uniform(6, 12) - (time.time() - _last_search[0])
+        if gap > 0:
+            time.sleep(gap)
+        first = page * 10 + 1
+        h.goto_url(f"https://www.bing.com/search?q={quote(query)}&setlang=bg&first={first}")
+        try:
+            h.wait_for_load(15)
+        except Exception:
+            pass
+        time.sleep(2.5)
+        _last_search[0] = time.time()
+        text = h.js("document.body.innerText.slice(0, 1500)") or ""
+        if SEARCH_CHALLENGE.search(text):
+            return {"error": "search_challenge", "engine": "bing", "query": query}
+        for r in h.js(_bundle("__fbx.webResults()")) or []:
+            url = fb_page_url(r.get("url", ""))
+            if url and url not in seen:
+                seen.add(url)
+                out.append({**r, "page_url": url})
+    return out
+
+
+def fb_page_summary(url):
+    """Public data of a Facebook Page WITHOUT login: {name, category, address, phone, website, hours, followers,
+    recommend_pct, review_total, first_review, state}. state 'ok' = read; 'not_found' / 'blocked' / 'stopped' as
+    fb_open says (a redirect to the login page counts as 'login_required' and stops the run)."""
+    page = fb_page_url(url) or url
+    r = fb_open(page)
+    if not r.get("ok"):
+        return {"url": page, "state": r.get("state", "unknown"), "reason": r.get("reason")}
+    s = _h().js(_bundle("__fbx.pageSummary()")) or {}
+    s["state"] = "ok"
+    s["url"] = page
+    return s
+
+
+def fb_save_summary(location, summary):
+    """Save one location in lite mode (results/<slug>.json, status 'summary_only'; or the failure state)."""
+    loc = dict(location if isinstance(location, dict) else {"url": str(location)})
+    url = fb_page_url(loc.get("url", "")) or loc.get("url")
+    for k in ("category", "address", "phone", "website", "followers"):
+        if summary.get(k) and not loc.get(k):
+            loc[k] = summary[k]
+    if summary.get("name") and (not loc.get("name") or " " not in loc["name"]):  # a slug like "HappyRakovski"
+        loc["name"] = summary["name"]
+    if summary.get("recommend_pct") is not None:
+        loc["rating_text"] = f"{summary['recommend_pct']}% препоръка ({summary.get('review_total')} отзива)"
+    state = summary.get("state", "unknown")
+    status = "summary_only" if state == "ok" else ("not_found" if state == "not_found" else "error")
+    first = summary.get("first_review")
+    reviews = [{"reviewer": None, "recommends": first.get("recommends"), "text": first.get("text"),
+                "date_text": None, "permalink": None, "replies": []}] if first else []
+    out = {"location": {**loc, "url": url}, "status": status, "reviews_url": None, "reviews": reviews,
+           "review_total": summary.get("review_total"), "recommend_pct": summary.get("recommend_pct"),
+           "notes": "lite mode: public Page data without a Facebook login" + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
+    _write(f"results/{fb_slug(url)}.json", out)
+    return {"saved": f"results/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
+            "review_total": summary.get("review_total")}

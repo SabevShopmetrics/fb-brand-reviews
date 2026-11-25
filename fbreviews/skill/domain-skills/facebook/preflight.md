@@ -26,11 +26,12 @@ Each review:
 | `date_text` | str / null | the date link text exactly as shown ("2 г.", "12 March 2024") |
 | `permalink` | str | the review's own link (`/posts/pfbid…`, `story_fbid=…`, `/permalink/…`), cleaned of tracking params |
 | `comment_count` | int / null | the "N comments / коментара" count under the review; null when no count is shown (0 comments) |
-| `replies` | list | comments that are actually visible (normally empty: Facebook does not show threads under reviews) |
+| `replies` | list | the replies Facebook shows inline under the review, usually the Page's own reply: `{author, text, truncated, date_text, permalink, depth, author_badge}`. `text` has no "от автора / Author" badge and no "… Вижте повече / See more" |
 | `replies_unavailable` | bool | set by the helper when `comment_count` > visible replies (counted, not shown) |
 
-Facebook shows **only a comment count** under reviews, never the thread itself. Do not try to open threads.
-Missing replies are not a defect.
+Facebook shows the comment count and an inline preview of a reply or two (often the Page's reply), never the full
+thread. The helpers expand "Вижте повече / See more" and read those previews. Do not try to open threads. Missing
+replies beyond the preview are not a defect.
 
 ## 2. What "healthy" looks like
 
@@ -52,7 +53,13 @@ Missing replies are not a defect.
 
 With fewer than 5 reviews, a share check fails only if every review is missing the field.
 Warnings (do not fail, but look at them): the page total was not parsed, no date texts, no comment counts on a big page,
-the header line leaking into the text.
+the header line leaking into the text. Reply warnings (`stats['replies']`):
+- more than 20% of replies are still `truncated` (check `re.EXPAND` and the sweep)
+- more than 20% have no text or no author
+- a reply text starts with the author badge, or ends with "Вижте повече / See more"
+- more than 10% of reviews have more replies than their `comment_count`
+
+If a reply warning shows up and the page clearly shows the replies, repair it the same way as a failed check.
 `healthy: None` means nothing could be checked yet. Either no location is known yet, or the sample page has no reviews.
 
 ## 3. When to run it
@@ -104,3 +111,6 @@ The override lives in the workspace (`fb_extract_override.js`). Every helper (`f
   or CAPTCHA. Never spoof the user agent or browser fingerprint.
 - Do not turn on comment-thread opening. The comment count is all Facebook gives.
 - Do not loosen the checks to make preflight pass. Fix the extraction, not the test.
+
+**Lite mode (no login):** reviews are not visible to logged-out visitors, so `fb_preflight` returns `healthy: None`
+and nothing is repaired because of missing reviews.

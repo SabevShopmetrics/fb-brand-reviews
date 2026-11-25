@@ -61,7 +61,7 @@ def to_reviews(raw: list) -> list[Review]:
     return out
 
 
-STATUSES = {"ok", "partial", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"}
+STATUSES = {"ok", "partial", "summary_only", "no_reviews", "reviews_disabled", "login_required", "blocked", "not_found", "error"}
 
 
 def promote_partials(ws: Path) -> None:
@@ -110,9 +110,10 @@ def load_results(run_dir: Path) -> list[LocationResult]:
             loc = {k: v for k, v in loc.items() if k in LocationPage.model_fields}
             loc.setdefault("name", loc.get("url", f.stem))
             status = d.get("status") if d.get("status") in STATUSES else "error"
-            rt = d.get("review_total")
+            rt, rp = d.get("review_total"), d.get("recommend_pct")
             out.append(LocationResult(location=LocationPage(**loc), status=status, reviews_url=d.get("reviews_url"),
                                       review_total=int(rt) if isinstance(rt, (int, float)) else None,
+                                      recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or "")))
         except Exception as e:
             logger.warning("skipping %s: %s", f.name, e)
@@ -157,6 +158,7 @@ async def run(
     locations_file: Path | None = None,
     hint: str | None = None,
     use_llm_classifier: bool = True,
+    lite: bool = False,
     progress=print,
 ) -> Path:
     from browser_use import Browser
@@ -165,7 +167,7 @@ async def run(
 
     if missing := s.missing_llm():
         raise SystemExit(f"Липсват настройки в .env: {', '.join(missing)}")
-    if not s.openwork_cdp_url:
+    if not lite and not s.openwork_cdp_url:
         raise SystemExit("Не намирам браузъра на OpenWork. Пуснат ли е OpenWork? Или задайте OPENWORK_CDP_URL.")
 
     run_dir = resume or new_run_dir(out_dir, brand)
@@ -177,7 +179,10 @@ async def run(
         stop_file.unlink()
     meta_path = run_dir / "meta.json"
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {"rounds": []}
-    meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model})
+    if resume and meta.get("lite"):
+        lite = True  # a lite run continues as lite
+    meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model,
+                 "lite": lite})
     locations_given = False
     if locations_file:
         raw = json.loads(Path(locations_file).read_text())
@@ -191,13 +196,19 @@ async def run(
     if locations_given:  # a given list is the whole list: the helpers will not add more
         max_locations = len(json.loads((ws / "locations.json").read_text()))
     config = {"pace_min_s": s.pace_min_s, "pace_max_s": s.pace_max_s, "daily_page_cap": s.daily_page_cap,
-              "max_reviews": max_reviews, "max_locations": max_locations}
+              "max_reviews": max_reviews, "max_locations": max_locations, "lite": lite}
     progress(f"Папка: {run_dir}")
 
-    bridge = BridgeThread(s.openwork_cdp_url, s.openwork_tab_match)
-    bridge.start()
-    progress(f"Браузър: OpenWork, таб {(bridge.lease_info or {}).get('url', '?')}")
-    browser = Browser(cdp_url=bridge.url, keep_alive=True)
+    bridge = None
+    if lite:
+        # Lite mode: a fresh local Chrome/Chromium with a temporary profile — no Facebook login, no cookies.
+        browser = Browser("chromium", headless=True, keep_alive=True)  # local: no CAPTCHA solver exists here
+        progress("Браузър: нов, без профил във Facebook (лек режим: само публичните данни на страниците)")
+    else:
+        bridge = BridgeThread(s.openwork_cdp_url, s.openwork_tab_match)
+        bridge.start()
+        progress(f"Браузър: OpenWork, таб {(bridge.lease_info or {}).get('url', '?')}")
+        browser = Browser(cdp_url=bridge.url, keep_alive=True)
     llm = make_llm(s)
     try:
         for round_no in range(len(meta["rounds"]) + 1, len(meta["rounds"]) + 1 + s.max_rounds):
@@ -237,7 +248,8 @@ async def run(
         try:
             await browser.stop()
         finally:
-            bridge.stop()
+            if bridge is not None:
+                bridge.stop()
 
     progress("Класифицирам отговорите (генериран / ръчен)…")
     report = await finalize(run_dir, brand, s, use_llm=use_llm_classifier)

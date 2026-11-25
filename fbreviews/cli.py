@@ -18,10 +18,15 @@ from pathlib import Path
 from .config import Settings
 
 
-def cmd_check(s: Settings, quiet: bool = False) -> int:
+def cmd_check(s: Settings, quiet: bool = False, lite: bool = False) -> int:
     ok = True
-    print(f"OpenWork CDP: {s.openwork_cdp_url or 'НЕ Е НАМЕРЕН'}")
-    if s.openwork_cdp_url:
+    if lite:
+        print("Лек режим: нов браузър без профил във Facebook (OpenWork не е нужен)")
+    else:
+        print(f"OpenWork CDP: {s.openwork_cdp_url or 'НЕ Е НАМЕРЕН'}")
+    if lite:
+        pass
+    elif s.openwork_cdp_url:
         from .cdp_bridge import BridgeThread
 
         try:
@@ -78,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--locations-file", type=Path, help="JSON списък с локации [{name,url}] — без търсене")
     sc.add_argument("--hint", help="подсказка за агента при търсенето, напр. 'официалната страница е ZARA'")
     sc.add_argument("--no-llm-classifier", action="store_true", help="само евристики при класификацията")
+    sc.add_argument("--lite", action="store_true",
+                    help="без профил във Facebook: само публичните данни на страниците (% препоръка, брой ревюта, адрес)")
 
     fn = sub.add_parser("finalize", help="само класификация + отчет за готова папка")
     fn.add_argument("run_dir", type=Path)
@@ -103,12 +110,12 @@ def main(argv: list[str] | None = None) -> int:
         if not a.brand:
             print("Няма бранд.", file=sys.stderr)
             return 2
-        if cmd_check(s, quiet=True) != 0:
+        if cmd_check(s, quiet=True, lite=a.lite) != 0:
             print("Проверката не мина — вижте горе какво липсва.", file=sys.stderr)
             return 1
         run_dir = asyncio.run(pipeline.run(
             a.brand, s, out_dir=a.out, resume=a.resume, max_locations=a.max_locations, max_reviews=a.max_reviews,
-            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier,
+            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite,
         ))
         print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}")
         return 0

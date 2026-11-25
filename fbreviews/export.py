@@ -20,6 +20,8 @@ def summarize(report: BrandReport) -> dict:
     for loc in report.locations:
         statuses[loc.status] = statuses.get(loc.status, 0) + 1
         for k, v in loc.stats().items():
+            if k == "facebook_recommend_pct":
+                continue
             total[k] = total.get(k, 0) + (v or 0)
     return {"locations": len(report.locations), "by_status": statuses, **total}
 
@@ -58,16 +60,16 @@ def write_excel(report: BrandReport, path: Path) -> None:
     for loc in report.locations:
         st = loc.stats()
         l = loc.location
-        rows.append([l.name, l.city, l.country, l.address, l.url, loc.status, loc.review_total, st["reviews"], st["recommends"],
+        rows.append([l.name, l.city, l.country, l.address, l.phone, l.url, loc.status, loc.recommend_pct, loc.review_total, st["reviews"], st["recommends"],
                      st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
                      st["reviews_with_page_reply"], st["page_replies"], st["generated"],
                      st["manual"], st["uncertain"], l.rating_text, loc.notes])
     _sheet(wb, "Локации",
-           ["Локация", "Град", "Държава", "Адрес", "Facebook", "Статус", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват", "Не препоръчват",
+           ["Локация", "Град", "Държава", "Адрес", "Телефон", "Facebook", "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват", "Не препоръчват",
             "Ревюта с коментари", "Коментари (брой по FB)",
             "Ревюта с отговор от страницата", "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Рейтинг",
             "Бележки"],
-           rows, [32, 14, 12, 30, 40, 14, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40])
+           rows, [32, 14, 12, 30, 14, 40, 14, 11, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40])
 
     rows = []
     for loc in report.locations:

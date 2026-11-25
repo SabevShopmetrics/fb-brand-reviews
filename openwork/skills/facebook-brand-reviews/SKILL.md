@@ -12,7 +12,7 @@ report the result. Do not scrape Facebook yourself and do not edit the tool's co
 Tool folder (TOOL_DIR): `__TOOL_DIR__`
 
 ## Before starting
-1. The built-in browser must have a **facebook.com** tab, logged in. If there is none, open
+1. (Not for lite mode.) The built-in browser must have a **facebook.com** tab, logged in. If there is none, open
    `https://www.facebook.com/` in the built-in browser and ask the user to log in there. Never type credentials,
    never log in for them.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill
@@ -24,10 +24,15 @@ Tool folder (TOOL_DIR): `__TOOL_DIR__`
 ```bash
 cd "__TOOL_DIR__" && scripts/run_bg.sh "<brand>" <max_locations> <max_reviews>
 ```
+**Lite mode (no Facebook profile at all):** add `lite` as the 4th argument
+(`scripts/run_bg.sh "<brand>" <max_locations> 0 lite`). It uses its own fresh browser (no login, not OpenWork's
+browser, so the Facebook tab is not needed and you may keep using the browser) and collects only each location's
+public data: category, address, phone, website, % recommend and number of reviews. No review texts, no replies.
+Use it when the user has no Facebook profile to use, or asks for ratings/totals only.
 It returns at once (`STARTED pid=… log=…`; `ALREADY_RUNNING` means a run is in progress — just follow it).
 The first run installs itself (2–3 minutes).
 
-**While it runs, do not use the built-in browser** (no browser tools at all): the tool drives the Facebook tab and
+**While a normal (not lite) run is going, do not use the built-in browser** (no browser tools at all): the tool drives the Facebook tab and
 any click or navigation of yours breaks its run. Tell the user the same: don't touch the Facebook tab.
 
 ## Follow

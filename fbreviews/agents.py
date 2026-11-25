@@ -41,6 +41,15 @@ never save data you know is wrong, and never loosen the checks.
 Read only. Never solve or get around a CAPTCHA / checkpoint / login: stop the run and report it.
 """
 
+SYSTEM_RULES_LITE = """\
+You work in a fresh browser WITHOUT any Facebook login (lite mode). Facebook shows visitors only the public data of a
+Page and a login dialog over the rest: collect only that public data. Before anything else read the skill file
+domain-skills/facebook/lite.md (path below) and follow it. Use its helpers (fb_progress, fb_web_search,
+fb_add_locations, fb_page_summary, fb_save_summary): they keep a safe pace and save everything.
+Never log in, never type credentials, never close or get around the login dialog, never solve a CAPTCHA (on Facebook
+or on a search engine): stop that part and report it.
+"""
+
 
 class RunSummary(BaseModel):
     brand_pages: list[str] = Field(default_factory=list)
@@ -60,6 +69,7 @@ def make_llm(s: Settings) -> Any:
 
 def install_skill(workspace: Path, config: dict) -> Path:
     """Copy the skill into the agent's browser-harness workspace (fresh each run, so edits to the repo apply)."""
+    workspace = Path(workspace).resolve()  # absolute: the agent's REPL runs inside the workspace, not here
     aw = workspace / ".browser-use" / "agent-workspace"
     aw.mkdir(parents=True, exist_ok=True)
     shutil.copy(SKILL_DIR / "agent_helpers.py", aw / "agent_helpers.py")
@@ -71,6 +81,23 @@ def install_skill(workspace: Path, config: dict) -> Path:
     (aw / "fb_config.json").write_text(json.dumps(config, indent=1))
     os.environ["BH_DOMAIN_SKILLS"] = "1"  # BH_* reaches the agent's REPL worker; goto_url then lists the skill files
     return aw
+
+
+def task_text_lite(brand: str, aw: Path, max_locations: int, hint: str | None, round_no: int, locations_given: bool) -> str:
+    skill = aw / "domain-skills" / "facebook" / "lite.md"
+    lines = [
+        f'Brand: "{brand}". Lite mode, no Facebook login: collect the public Page data (category, address, phone, '
+        f"website, % recommend, number of reviews) of every physical location of this brand (up to {max_locations}).",
+        f"Skill: read {skill} first (print(open(r'{skill}').read())) and follow it.",
+        "Start with fb_progress(): files from earlier rounds are kept, continue from there.",
+    ]
+    if locations_given:
+        lines.append("The location list is already given (locations.json): skip Phase 1, do Phase 2.")
+    if hint:
+        lines.append(f"Hint from the user: {hint}")
+    if round_no > 1:
+        lines.append(f"This is round {round_no}: an earlier round ran out of steps. Do not redo finished locations.")
+    return "\n".join(lines)
 
 
 def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_no: int, locations_given: bool) -> str:
@@ -94,18 +121,41 @@ def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_
     return "\n".join(lines)
 
 
+CELL_TIMEOUT_S = float(os.environ.get("AGENT_CELL_TIMEOUT", "960"))
+
+
+def _allow_long_cells() -> None:
+    """browser-use 1.0 stops any REPL cell after 120 s (Session.cell_timeout_s, not an Agent option). One location's
+    extraction (paced scrolling + the second sweep) takes several minutes, so cells get CELL_TIMEOUT_S instead."""
+    import browser_use.agent.service as svc
+
+    if getattr(svc.Session, "_fbreviews_patched", False):
+        return
+    original = svc.Session
+
+    def session(*args: Any, **kwargs: Any) -> Any:
+        sess = original(*args, **kwargs)
+        sess.cell_timeout_s = max(sess.cell_timeout_s, CELL_TIMEOUT_S)
+        return sess
+
+    session._fbreviews_patched = True  # type: ignore[attr-defined]
+    svc.Session = session  # type: ignore[assignment]
+
+
 async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspace: Path, max_locations: int,
                     hint: str | None, round_no: int, locations_given: bool, config: dict) -> RunSummary:
     from browser_use import Agent
 
+    _allow_long_cells()
     aw = install_skill(workspace, config)
     kwargs: dict[str, Any] = {}
     if not s.llm_vision:
         kwargs["use_vision"] = False
+    lite = bool(config.get("lite"))
     agent = Agent(
-        task_text(brand, aw, max_locations, hint, round_no, locations_given),
+        (task_text_lite if lite else task_text)(brand, aw, max_locations, hint, round_no, locations_given),
         llm=llm, browser=browser, output_model_schema=RunSummary, workspace=str(workspace),
-        extend_system_message=SYSTEM_RULES, judge=s.judge, **kwargs,
+        extend_system_message=SYSTEM_RULES_LITE if lite else SYSTEM_RULES, judge=s.judge, **kwargs,
     )
     history = await agent.run(max_steps=s.max_steps, timeout=s.timeout)
     out = history.structured_output

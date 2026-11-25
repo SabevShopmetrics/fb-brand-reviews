@@ -432,7 +432,70 @@ window.__fbx = (function () {
   F.clickExpanders = clickExpanders; F.isCommentEl = isCommentEl; F.posts = posts; F.commentSet = commentSet;
   F.ownerComment = ownerComment; F.cleanUrl = cleanUrl; F.textBlocks = textBlocks; F.labelAuthor = labelAuthor;
   F.parseComment = parseComment; F.parsePost = parsePost; F.keyOf = keyOf; F.accumulate = accumulate;
-  F.scroll = scroll; F.sweep = sweep; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  // ---- logged-out ("lite") mode -------------------------------------------------------------------------------
+  // Public data of a Page as Facebook shows it WITHOUT login: name, category, address, phone, website, followers,
+  // "% recommend (N reviews)" and the first visible review. Reads the DOM only (the login / cookie dialogs stay up).
+  function pageSummary() {
+    var body = txt(document.body);
+    var lines = body.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var h1 = document.querySelector('h1');
+    var name = h1 ? txt(h1).replace(/\s+/g, ' ').trim() : null;
+    var rec = body.match(/(\d{1,3})\s*%\s*(recommend|препоръка|recomienda|recommandent|empfehlen|consigliano|recomenda|poleca|recomandă|συνιστούν|tavsiye)[^(\n]*\((\d[\d\s.,]*)\s*([^)\n]*)\)/i);
+    var followers = body.match(/([\d.,]+\s*[KkMmХхМм]?)\s*(followers|последователи|seguidores|abonnés|follower)/i);
+    var catIdx = -1, category = null;
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].match(/^(Page|Страница|Página|Seite|Pagina|Strona|Σελίδα|Sayfa)\s*·\s*(.+)$/i);
+      if (m) { catIdx = i; category = m[2].trim(); break; }
+    }
+    var address = null, phone = null, website = null, hours = null;
+    var start = catIdx >= 0 ? catIdx + 1 : 0;
+    for (var j = start; j < Math.min(lines.length, start + 12); j++) {
+      var l = lines[j];
+      if (!phone && /^[+0(][\d\s()\-]{6,}$/.test(l)) { phone = l; continue; }
+      if (!website && /^(https?:\/\/)?[a-z0-9\-]+(\.[a-z0-9\-]+)+(\/\S*)?$/i.test(l) && !/facebook\.com/i.test(l)) { website = l; continue; }
+      if (!hours && /^(open now|closed now|отворено|затворено|always open|винаги отворено|opens|отваря)/i.test(l)) { hours = l; continue; }
+      if (!address && catIdx >= 0 && /,/.test(l) && !/%|followers|последователи/i.test(l) && l.length < 160) { address = l.replace(/,\s*,/g, ','); }
+    }
+    var first = null;
+    var art = document.querySelector('[role="article"]');
+    if (art && (F.re.POS.test(txt(art).slice(0, 200)) || F.re.NEG.test(txt(art).slice(0, 200)))) {   // a review, not a post
+      var t = txt(art);
+      first = { header: (t.split('\n')[0] || '').slice(0, 200), recommends: F.re.NEG.test(t.slice(0, 300)) ? false : (F.re.POS.test(t.slice(0, 300)) ? true : null), text: t.slice(0, 600) };
+    }
+    return {
+      url: location.href.split('?')[0], name: name, category: category, address: address, phone: phone,
+      website: website, hours: hours, followers: followers ? followers[1].trim() : null,
+      recommend_pct: rec ? parseInt(rec[1], 10) : null,
+      review_total: rec ? parseInt(rec[3].replace(/[^\d]/g, ''), 10) : null,
+      first_review: first, state: pageState().state,
+      login_dialog: /see more (on|from)|вижте повече (във|от)|log in|влезте/i.test(Array.prototype.map.call(document.querySelectorAll('[role="dialog"]'), function (d) { return txt(d); }).join(' '))
+    };
+  }
+
+  // Results of a web search page (DuckDuckGo HTML or Bing) that point to facebook.com: [{title, url, snippet}].
+  function webResults() {
+    var out = [], seen = new Set();
+    var links = document.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i], href = a.href;
+      try {
+        var u = new URL(href);
+        var target = u.searchParams.get('uddg') || u.searchParams.get('u') || href;   // DuckDuckGo / redirectors
+        if (/^a1aHR0/.test(target)) { try { target = atob(target.slice(2).replace(/-/g, '+').replace(/_/g, '/')); } catch (e) {} }  // Bing
+        if (!/^https?:\/\/([a-z\-]+\.)?facebook\.com\//i.test(target)) continue;
+        if (seen.has(target)) continue;
+        var box = a.closest('.result, .b_algo, li, article, div') || a.parentElement;
+        var h = box && box.querySelector('h2, h3');
+        var title = (h ? txt(h) : txt(a)).split('\n').filter(function (x) { return x && !/^https?:|^[a-z0-9.\-]+\.[a-z]{2,}$/i.test(x); })[0] || txt(a);
+        if (!title) continue;
+        seen.add(target);
+        out.push({ title: title.slice(0, 200), url: target, snippet: txt(box).replace(title, '').trim().slice(0, 300) });
+      } catch (e) { /* not a URL */ }
+    }
+    return out;
+  }
+
+  F.scroll = scroll; F.sweep = sweep; F.pageSummary = pageSummary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

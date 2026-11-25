@@ -51,8 +51,14 @@ def reviews_url(page_url: str) -> str:
     return norm.rstrip("/") + "/reviews"
 
 
+_CYR = dict(zip("абвгдежзийклмнопрстуфхцчшщъьюяѝ",
+                ["a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u",
+                 "f", "h", "ts", "ch", "sh", "sht", "a", "y", "yu", "ya", "i"]))
+
+
 def slug(text: str, max_len: int = 60) -> str:
-    t = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    text = "".join(_CYR.get(ch.lower(), ch) for ch in (text or ""))  # "Лидл" → "lidl", not "x"
+    t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     t = re.sub(r"[^A-Za-z0-9]+", "-", t).strip("-").lower()
     return (t or "x")[:max_len]
 

@@ -102,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     fn.add_argument("--brand")
     fn.add_argument("--no-llm-classifier", action="store_true")
 
+    db = sub.add_parser("dashboard", help="output/index.html — всички извлечени брандове с табове")
+    db.add_argument("--out", type=Path, default=Path("output"))
+
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -109,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "check":
         return cmd_check(s)
+
+    if a.cmd == "dashboard":
+        from .html_report import write_index
+
+        print(f"Табло: {write_index(a.out).resolve()}")
+        return 0
 
     from . import pipeline
 
@@ -128,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
             a.brand, s, out_dir=a.out, resume=a.resume, max_locations=a.max_locations, max_reviews=a.max_reviews,
             locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden, country=a.country,
         ))
-        print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}\nHTML:  {run_dir / 'report.html'}")
+        print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}\nHTML:  {run_dir / 'report.html'}"
+              f"\nТабло: {run_dir.parent / 'index.html'}  (всички брандове досега, с табове)")
         return 0
 
     if a.cmd == "finalize":
@@ -139,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         report = asyncio.run(pipeline.finalize(a.run_dir, brand, s, use_llm=not a.no_llm_classifier))
         print(json.dumps(report.summary, ensure_ascii=False, indent=2))
+        print(f"Табло (всички брандове): {(a.run_dir.parent / 'index.html').resolve()}")
         return 0
     return 2
 

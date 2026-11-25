@@ -62,11 +62,17 @@ It prints RUNNING / FINISHED and "какво прави": the tool's own step-by
 - The tool itself writes `report.html` (+ `report.xlsx`, `report.json`) from its own output: after every round an
   interim one ("междинен отчет: …" in the log), and the final one at the end. Never build or edit a report yourself;
   only open the file the tool made. On a long run, offer the interim report (`open "<path>"`).
+- The tool also keeps a dashboard of EVERY brand extracted so far: `output/index.html` (one tab per brand, its latest
+  run with data, plus an "Всички" overview comparing the brands). It is rebuilt after every round and every run.
+  When the user asks for "all brands", "the dashboard", "табове" or to compare brands, open it:
+  `open "<project>/output/index.html"` (path from `status.sh`, line "табло:"). To rebuild it without a run:
+  `.venv/bin/python -m fbreviews dashboard`.
 
 ## When it is finished
 - Say clearly that it is finished, then OPEN the interactive report for the user: `open "<run folder>/report.html"`
   (statistics, charts, brand Pages, locations comparison, every review with text, tags, reactions, photos, replies;
-  filters, search, CSV/JSON download). Also give the paths of `report.xlsx` (Excel) and `report.json` (all data).
+  filters, search, CSV/JSON download). Also give the paths of `report.xlsx` (Excel) and `report.json` (all data),
+  and mention the all-brands dashboard `output/index.html` (tabs for every brand extracted so far).
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.

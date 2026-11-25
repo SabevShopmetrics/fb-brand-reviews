@@ -13,3 +13,4 @@ if [ -n "$dir" ] && [ -f "$dir/report.json" ]; then
   echo "excel:  $(pwd)/$dir/report.xlsx"
   echo "html:   $(pwd)/$dir/report.html"
 fi
+[ -f output/index.html ] && echo "табло:  $(pwd)/output/index.html   (всички брандове досега, с табове)"

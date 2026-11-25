@@ -160,6 +160,12 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
     from .html_report import write_html
 
     write_html(json.loads((run_dir / "report.json").read_text()), run_dir / "report.html")
+    try:  # output/index.html — every brand so far, one tab each; never let it break the run
+        from .html_report import write_index
+
+        write_index(run_dir.parent)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("dashboard not rebuilt: %s", e)
     return report
 
 

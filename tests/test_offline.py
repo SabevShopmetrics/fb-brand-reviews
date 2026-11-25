@@ -106,3 +106,20 @@ def test_html_report(tmp_path):
     html = (tmp_path / "r.html").read_text()
     assert "Zara Mall Sofia" in html and "<script id=\"data\" type=\"application/json\">" in html
     assert "</script>" not in html.split('type="application/json">', 1)[1].split("</script>", 1)[0]
+
+
+def test_dashboard_index(tmp_path):
+    from fbreviews.html_report import collect_runs, write_index
+    report = _report()
+    asyncio.run(classify_replies(report.locations, "Zara", llm=None))
+    report.summary = summarize(report)
+    old, new, empty = (tmp_path / n for n in ("zara_20261101-100000", "zara_20261102-100000", "lidl_20261103-100000"))
+    for d in (old, new, empty):
+        d.mkdir()
+    write_json(report, old / "report.json")
+    write_json(report, new / "report.json")
+    write_json(BrandReport(brand="Lidl"), empty / "report.json")  # no data: no tab
+    sets = collect_runs(tmp_path)
+    assert [s["key"] for s in sets] == ["zara"] and sets[0]["run"] == new.name and len(sets[0]["runs"]) == 2
+    html = write_index(tmp_path).read_text()
+    assert '"mode": "index"' in html and "Zara Mall Sofia" in html

@@ -58,7 +58,7 @@ It prints RUNNING / FINISHED and "какво прави": the tool's own step-by
 - Keep checking until FINISHED. Do not end your turn while it is RUNNING unless the user asks you to stop following.
 - Never stop, restart or start a second run yourself; only one run at a time (`ALREADY_RUNNING` = follow it). If the
   user has another session running the tool, tell them instead of starting your own.
-- It is slow on purpose (6–14 s between pages) to keep the account safe; a large brand can take hours. That is normal.
+- It is slow on purpose (4–10 s between pages) to keep the account safe; a large brand can take hours. That is normal.
 - The tool itself writes `report.html` (+ `report.xlsx`, `report.json`) from its own output: after every round an
   interim one ("междинен отчет: …" in the log), and the final one at the end. Never build or edit a report yourself;
   only open the file the tool made. On a long run, offer the interim report (`open "<path>"`).

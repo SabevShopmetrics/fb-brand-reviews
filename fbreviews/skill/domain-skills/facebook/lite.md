@@ -59,7 +59,7 @@ for loc in fb_progress()['todo']:
         break                     # Facebook demands a login or a check: stop the run
     print(fb_save_summary(loc, s))
 ```
-Run it in ONE cell; it paces itself (6–14 s between pages). A Page with no "% recommend" simply has no reviews or
+Run it in ONE cell; it paces itself (4–10 s between pages). A Page with no "% recommend" simply has no reviews or
 has them switched off: save it anyway (recommend_pct stays empty).
 
 ## Finish

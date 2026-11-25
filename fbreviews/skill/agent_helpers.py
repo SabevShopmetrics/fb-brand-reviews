@@ -34,8 +34,8 @@ _WS = Path(os.environ.get("BU_STATE_DIR", ".browser-use")).resolve().parent  # t
 _JS = (_HERE / "fb_extract.js").read_text() if (_HERE / "fb_extract.js").exists() else ""
 _CFG = json.loads((_HERE / "fb_config.json").read_text()) if (_HERE / "fb_config.json").exists() else {}
 
-PACE_MIN = float(_CFG.get("pace_min_s", 6))        # seconds between page loads, at least
-PACE_MAX = float(_CFG.get("pace_max_s", 14))       # ... and at most
+PACE_MIN = float(_CFG.get("pace_min_s", 4))        # seconds between page loads, at least
+PACE_MAX = float(_CFG.get("pace_max_s", 10))       # ... and at most
 DAILY_PAGE_CAP = int(_CFG.get("daily_page_cap", 5000))
 MAX_REVIEWS = int(_CFG.get("max_reviews", 100000))      # 100000 = all
 MAX_LOCATIONS = int(_CFG.get("max_locations", 100000))  # 100000 = all
@@ -403,7 +403,7 @@ def _extract_reviews(url, max_reviews=None, name=None):
     r = fb_open(rurl)
     if not r.get("ok"):
         return {"status": r.get("state", "unknown"), "reviews_url": rurl, "reviews": [], "notes": r.get("reason", "")}
-    opts = {"pageName": name or "", "maxReviews": max_reviews, "steps": 4, "delayMs": 1500}
+    opts = {"pageName": name or "", "maxReviews": max_reviews, "steps": 4, "delayMs": 900}
     reviews, diag = _collect(opts)
     try:  # the Page header on the same tab (no extra page load): category, followers, price, % recommend
         head = _run("__fbx.pageSummary()") or {}
@@ -512,8 +512,12 @@ def _collect_live(opts, reset=False):
         if st.get("done"):
             break
     sw = {}
-    if time.time() < deadline:   # second slow pass in the same page: late reply previews, expanded texts
-        _say("  второ минаване по списъка за отговорите на страницата…")
+    need = _run("__fbx.needsSweep(" + json.dumps(opts) + ")") or {}
+    if isinstance(need, dict) and need.get("reviews") and not need.get("need"):
+        _say("  няма ревюта с коментари — второто минаване не е нужно")
+        sw = {"skipped": "no_comments"}
+    elif time.time() < deadline:   # second pass in the same page: late reply previews, expanded texts
+        _say(f"  второ минаване по списъка за отговорите на страницата ({need.get('need', '?') if isinstance(need, dict) else '?'} ревюта с коментари)…")
         first = True
         while time.time() < deadline:   # short chunks: one js() call must finish within ~25 s
             sw = _run("__fbx.sweep(" + json.dumps({**opts, "restart": first, "chunkMs": 12000,
@@ -779,7 +783,7 @@ def fb_preflight(sample_url=None, search_query=None, reload=True, max_reviews=60
     if fb_stopped():
         return {"healthy": False, "stop": True, "reason": fb_stopped()}
     rep = {"at": datetime.now().isoformat(timespec="seconds"), "override": fb_override(code=False)}
-    opts = {"pageName": "", "maxReviews": max_reviews, "steps": 4, "delayMs": 1500}
+    opts = {"pageName": "", "maxReviews": max_reviews, "steps": 4, "delayMs": 900}
     rev = None
     if not reload:
         reviews, diag = _collect(opts, reset=True)

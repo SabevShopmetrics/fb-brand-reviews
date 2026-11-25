@@ -296,11 +296,13 @@ window.__fbx = (function () {
   // Loads the list gradually. Facebook can be slow: keep going until the count reaches
   // min(maxReviews, the page's own "(N reviews)" total), or nothing new arrived for a real wait (patience steps AND
   // minWaitMs since the last new review), with a nudge (up a little, then down to the end) before giving up.
-  // opts: steps (per call), delayMs, maxReviews, patience (stable steps, default 10), minWaitMs (default 20000).
+  // opts: steps (per call), delayMs (default 900), maxReviews, patience (stable steps, default 7), minWaitMs (default 12000).
+  // Timing: Facebook makes one request per batch of reviews however fast we scroll, so shorter waits mostly cut idle
+  // time, not add requests; placeholders still get a double wait so nothing is skipped.
   async function scroll(opts) {
     opts = opts || {};
-    var steps = opts.steps || 12, delay = opts.delayMs || 1500, max = opts.maxReviews || 100000;
-    var patience = opts.patience || 10, minWait = opts.minWaitMs == null ? 20000 : opts.minWaitMs;
+    var steps = opts.steps || 12, delay = opts.delayMs || 900, max = opts.maxReviews || 100000;
+    var patience = opts.patience || 7, minWait = opts.minWaitMs == null ? 12000 : opts.minWaitMs;
     var st = window.__fbxState || (window.__fbxState = { last: 0, stable: 0, lastNewAt: Date.now(), nudges: 0 });
     var total = F.reviewTotal();
     var want = total ? Math.min(max, total) : max;
@@ -308,7 +310,7 @@ window.__fbx = (function () {
     for (var i = 0; i < steps; i++) {
       // Expand "Вижте повече" on what is in view now and read it BEFORE scrolling on: Facebook empties reviews
       // that leave the viewport, so an expansion read one step later is lost.
-      if (F.clickExpanders()) { await sleep(1200); F.accumulate(opts); }
+      if (F.clickExpanders()) { await sleep(700); F.accumulate(opts); }
       // Facebook fills placeholders only when they enter the viewport: walk down gradually, not straight to the end.
       var ps = F.posts();
       var firstEmpty = ps.filter(function (p) { return !txt(p); })[0];
@@ -318,7 +320,7 @@ window.__fbx = (function () {
       await sleep(firstEmpty ? delay * 2 : delay);   // a placeholder is still loading: give it time
       var clicked = F.clickExpanders();
       expanded += clicked;
-      await sleep(clicked ? 1000 : 300);   // let "Вижте повече" expand before reading
+      await sleep(clicked ? 600 : 150);   // let "Вижте повече" expand before reading
       c = F.accumulate(opts).order.length;
       if (c !== st.last) { st.stable = 0; st.last = c; st.lastNewAt = Date.now(); st.nudges = 0; }
       else st.stable += firstEmpty ? 0.5 : 1;
@@ -349,7 +351,7 @@ window.__fbx = (function () {
     // Runs in short chunks (each js() call must return within ~25 s): call it again until `done`. It stops once the
     // last review has been passed — not at the very end of the page, which Facebook keeps extending.
     opts = opts || {};
-    var delay = opts.delayMs || 1200, budget = opts.chunkMs || 12000, t0 = Date.now();
+    var delay = opts.sweepDelayMs || 700, budget = opts.chunkMs || 12000, t0 = Date.now();
     var st = window.__fbxSweep;
     if (!st || opts.restart) {
       st = window.__fbxSweep = { started: Date.now(), hits: 0 };
@@ -360,7 +362,7 @@ window.__fbx = (function () {
     while (Date.now() - t0 < budget) {
       if (F.clickExpanders()) await sleep(delay);
       F.accumulate(opts);
-      await sleep(400);                        // previews that render late
+      await sleep(300);                        // previews that render late
       F.accumulate(opts);
       var ps = F.posts(), last = ps[ps.length - 1];
       var pastLast = !last || last.getBoundingClientRect().bottom < window.innerHeight * 0.4;
@@ -369,7 +371,7 @@ window.__fbx = (function () {
         if (++st.hits >= 2) { done = true; reason = pastLast ? 'past_last_review' : 'page_end'; break; }
       } else st.hits = 0;
       if (opts.maxMs && Date.now() - st.started > opts.maxMs) { done = true; reason = 'time_limit'; break; }
-      window.scrollBy(0, Math.round(window.innerHeight * 0.6));
+      window.scrollBy(0, Math.round(window.innerHeight * 0.75));
       await sleep(delay);
     }
     var acc = F.accumulate(opts);
@@ -377,9 +379,20 @@ window.__fbx = (function () {
     return { done: done, reason: reason, reviews: acc.order.length, with_replies: withReplies, ms: Date.now() - st.started };
   }
 
+  // Is the second pass worth it? Only reviews with comments can get a (late) Page reply preview, and only a
+  // truncated reply can still get longer. None of those: the second pass would find nothing new.
+  function needsSweep(opts) {
+    var acc = F.accumulate(opts || {}), n = 0;
+    acc.order.forEach(function (k) {
+      var r = acc.map[k], reps = r.replies || [];
+      if ((r.comment_count || 0) > 0 || reps.some(function (x) { return x.truncated; })) n++;
+    });
+    return { need: n, reviews: acc.order.length };
+  }
+
   async function extract(opts) {
     opts = opts || {};
-    for (var k = 0; k < 4; k++) { if (!F.clickExpanders()) break; await sleep(1200); }
+    for (var k = 0; k < 4; k++) { if (!F.clickExpanders()) break; await sleep(700); }
     var ps = F.posts();
     var acc = F.accumulate(opts);
     var max = opts.maxReviews || acc.order.length;
@@ -604,7 +617,7 @@ window.__fbx = (function () {
     return out;
   }
 
-  F.scroll = scroll; F.sweep = sweep; F.pageSummary = pageSummary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal; F.recommendPct = recommendPct;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

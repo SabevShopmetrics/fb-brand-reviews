@@ -298,6 +298,12 @@ async def run(
             meta["rounds"].append({"round": round_no, **sm, **{f"after_{k}": v for k, v in after.items()}})
             meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
             progress(f"   → локации {after['locations']}, готови {after['done']}. {str(sm.get('notes', ''))[:300]}")
+            if after["done"]:
+                try:  # interim report from what is saved so far (the model classification runs at the end)
+                    await finalize(run_dir, brand, s, use_llm=False)
+                    progress(f"   междинен отчет: {run_dir / 'report.html'}")
+                except Exception as e:
+                    logger.warning("interim report failed: %s", e)
 
             if after["stopped"] or sm.get("stop_reason") in STOP_STATES:
                 progress(f"Спрях заради Facebook: {after['stopped'] or sm.get('stop_reason')}. "

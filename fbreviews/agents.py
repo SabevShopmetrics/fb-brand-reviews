@@ -42,12 +42,13 @@ Read only. Never solve or get around a CAPTCHA / checkpoint / login: stop the ru
 """
 
 SYSTEM_RULES_LITE = """\
-You work in a fresh browser WITHOUT any Facebook login (lite mode). Facebook shows visitors only the public data of a
-Page and a login dialog over the rest: collect only that public data. Before anything else read the skill file
+Lite mode: collect only the PUBLIC data of each location's Facebook Page (what a visitor without an account sees).
+The browser is OpenWork's built-in one (the user watches it; it may or may not be logged in to Facebook) or a fresh
+hidden one. Either way, read only the public Page data. Before anything else read the skill file
 domain-skills/facebook/lite.md (path below) and follow it. Use its helpers (fb_progress, fb_web_search,
 fb_add_locations, fb_page_summary, fb_save_summary): they keep a safe pace and save everything.
-Never log in, never type credentials, never close or get around the login dialog, never solve a CAPTCHA (on Facebook
-or on a search engine): stop that part and report it.
+Never log in or out, never type credentials, never close or get around a login dialog, never solve a CAPTCHA (on
+Facebook or on a search engine): stop that part and report it.
 """
 
 

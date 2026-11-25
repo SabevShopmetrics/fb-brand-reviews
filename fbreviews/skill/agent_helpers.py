@@ -788,7 +788,12 @@ def fb_page_summary(url):
     r = fb_open(page)
     if not r.get("ok"):
         return {"url": page, "state": r.get("state", "unknown"), "reason": r.get("reason")}
-    s = _h().js(_bundle("__fbx.pageSummary()")) or {}
+    s = {}
+    for _ in range(10):  # the public view loads slowly: wait until the header data is there (≤ ~20 s)
+        s = _h().js(_bundle("__fbx.pageSummary()")) or {}
+        if s.get("name") and (s.get("recommend_pct") is not None or s.get("category")):
+            break
+        time.sleep(2)
     s["state"] = "ok"
     s["url"] = page
     return s

@@ -159,6 +159,7 @@ async def run(
     hint: str | None = None,
     use_llm_classifier: bool = True,
     lite: bool = False,
+    hidden: bool = False,
     progress=print,
 ) -> Path:
     from browser_use import Browser
@@ -167,7 +168,7 @@ async def run(
 
     if missing := s.missing_llm():
         raise SystemExit(f"Липсват настройки в .env: {', '.join(missing)}")
-    if not lite and not s.openwork_cdp_url:
+    if not (lite and hidden) and not s.openwork_cdp_url:
         raise SystemExit("Не намирам браузъра на OpenWork. Пуснат ли е OpenWork? Или задайте OPENWORK_CDP_URL.")
 
     run_dir = resume or new_run_dir(out_dir, brand)
@@ -181,8 +182,9 @@ async def run(
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {"rounds": []}
     if resume and meta.get("lite"):
         lite = True  # a lite run continues as lite
+        hidden = hidden or bool(meta.get("hidden"))
     meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model,
-                 "lite": lite})
+                 "lite": lite, "hidden": hidden})
     locations_given = False
     if locations_file:
         raw = json.loads(Path(locations_file).read_text())
@@ -200,14 +202,16 @@ async def run(
     progress(f"Папка: {run_dir}")
 
     bridge = None
-    if lite:
-        # Lite mode: a fresh local Chrome/Chromium with a temporary profile — no Facebook login, no cookies.
+    if lite and hidden:
+        # Hidden lite mode: a fresh local Chrome/Chromium, temporary profile — no Facebook login, no cookies, no window.
         browser = Browser("chromium", headless=True, keep_alive=True)  # local: no CAPTCHA solver exists here
-        progress("Браузър: нов, без профил във Facebook (лек режим: само публичните данни на страниците)")
+        progress("Браузър: невидим, нов, без профил във Facebook (лек режим: само публичните данни на страниците)")
     else:
+        # OpenWork's built-in browser, visible in its panel (full mode, and lite mode by default).
         bridge = BridgeThread(s.openwork_cdp_url, s.openwork_tab_match)
         bridge.start()
-        progress(f"Браузър: OpenWork, таб {(bridge.lease_info or {}).get('url', '?')}")
+        mode = "лек режим: само публичните данни на страниците" if lite else "пълен режим"
+        progress(f"Браузър: вграденият на OpenWork ({mode}), таб {(bridge.lease_info or {}).get('url', '?')}")
         browser = Browser(cdp_url=bridge.url, keep_alive=True)
     llm = make_llm(s)
     try:

@@ -23,7 +23,7 @@ if [ -z "$brand" ]; then
   .venv/bin/python -m fbreviews scrape --resume "$last"
 else
   read "maxloc?Колко локации максимум [200]: "
-  read "lite?Без профил във Facebook (само % препоръка, брой ревюта, адрес)? [y/N]: "
+  read "lite?Лек режим без профил (само % препоръка, брой ревюта, адрес; във вградения браузър на OpenWork)? [y/N]: "
   if [[ "$lite" == [yYдД]* ]]; then
     .venv/bin/python -m fbreviews scrape "$brand" --max-locations "${maxloc:-200}" --lite
   else

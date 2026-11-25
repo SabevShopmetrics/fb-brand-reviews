@@ -1,8 +1,9 @@
-# Facebook lite mode: public data of every location, WITHOUT a Facebook login
+# Facebook lite mode: public data of every location (no Facebook account needed)
 
-You work in a fresh browser with no Facebook account. Facebook shows visitors only the public data of a Page (name,
-category, address, phone, website, followers, "94% recommend (522 reviews)") and a login dialog over the rest. That
-is all this mode collects. Never log in, never type credentials, never try to close or get around the login dialog
+This mode collects only the public data of a Page — what Facebook shows a visitor without an account: name,
+category, address, phone, website, followers, "94% recommend (522 reviews)". The browser is OpenWork's built-in one
+(the user is watching it; it may be logged in to Facebook or not) or a fresh hidden one with no account. Either way
+collect only that public data. Never log in, never type credentials, never try to close or get around the login dialog
 or any CAPTCHA. Reading the page behind the dialog is fine; the helpers do it.
 
 Read `preflight.md` only for its safety rules; its review checks do not apply here (there is no review list).

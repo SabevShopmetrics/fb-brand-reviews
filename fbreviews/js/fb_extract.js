@@ -436,28 +436,56 @@ window.__fbx = (function () {
   // Public data of a Page as Facebook shows it WITHOUT login: name, category, address, phone, website, followers,
   // "% recommend (N reviews)" and the first visible review. Reads the DOM only (the login / cookie dialogs stay up).
   function pageSummary() {
-    var body = txt(document.body);
-    var lines = body.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-    var h1 = document.querySelector('h1');
+    // Works for the logged-out view (EN/BG) and the logged-in one; reads the Page's main column, never dialogs
+    // (the notifications panel has its own <h1>).
+    var main = document.querySelector('[role="main"]') || document.body;
+    var dialogLines = new Set();
+    Array.prototype.forEach.call(document.querySelectorAll('[role="dialog"]'), function (d) {
+      txt(d).split('\n').forEach(function (l) { if (l.trim()) dialogLines.add(l.trim()); });
+    });
+    var clean = function (t) {
+      return t.split('\n').map(function (l) { return l.trim(); })
+        .filter(function (l) { return l && !dialogLines.has(l) && !/^[{\[]|"require"/.test(l); });
+    };
+    // logged-out pages keep the Page header outside [role=main]: use the whole page when main lacks it
+    var lines = clean(txt(main));
+    if (!lines.some(function (l) { return /%|·|последовател|followers/i.test(l); })) { main = document.body; lines = clean(txt(document.body)); }
+    var body = lines.join('\n');
+    var LABEL = /^(log in|forgot account\?|влизане|забравен профил\?|още|more|всички|all|информация|about|последователи|followers|снимки|photos|споменавания|mentions|публикации|posts|видеоклипове|videos|reels|събития|events|следване|follow|търсене|search|обадете се сега|call now|съобщение|message|харесване|like|подробности|details|intro|представяне|връзки|links|препоръчани|featured|филтри|filters)$/i;
+    var h1 = Array.prototype.filter.call(document.querySelectorAll('h1'), function (h) { return !h.closest('[role="dialog"]'); })[0];
     var name = h1 ? txt(h1).replace(/\s+/g, ' ').trim() : null;
+    if (!name) name = lines.filter(function (l) { return !LABEL.test(l); })[0] || null;
+    if (!name || /^(известия|notifications|facebook)$/i.test(name))
+      name = document.title.replace(/^\(\d+\)\s*/, '').replace(/\s*\|\s*Facebook.*$/, '').trim() || null;
     var rec = body.match(/(\d{1,3})\s*%\s*(recommend|препоръка|recomienda|recommandent|empfehlen|consigliano|recomenda|poleca|recomandă|συνιστούν|tavsiye)[^(\n]*\((\d[\d\s.,]*)\s*([^)\n]*)\)/i);
-    var followers = body.match(/([\d.,]+\s*[KkMmХхМм]?)\s*(followers|последователи|seguidores|abonnés|follower)/i);
-    var catIdx = -1, category = null;
+    var followers = body.match(/([\d.,]+\s*(хил\.|млн\.|[KkMm])?)\s*(followers|последователи|seguidores|abonnés|follower)/i);
+    var head = lines.slice(0, 20);
+    var category = null, catIdx = -1;
     for (var i = 0; i < lines.length; i++) {
       var m = lines[i].match(/^(Page|Страница|Página|Seite|Pagina|Strona|Σελίδα|Sayfa)\s*·\s*(.+)$/i);
       if (m) { catIdx = i; category = m[2].trim(); break; }
     }
+    if (!category) {  // logged-in: "<description>" then "<category>" then "Още" in the header
+      var more = head.findIndex(function (l) { return /^(още|more)$/i.test(l); });
+      var cand = more > 0 ? head[more - 1] : null;
+      if (cand && cand.length < 50 && !/\d|%|·/.test(cand) && !LABEL.test(cand) && cand !== name) { category = cand; catIdx = more - 1; }
+    }
+    var det = lines.findIndex(function (l) { return /^(подробности|details|intro|представяне)$/i.test(l); });
+    var from = Math.max(0, Math.min.apply(null, [catIdx, det].filter(function (x) { return x >= 0; }).concat([0])));
+    if (det >= 0) from = Math.min(det, catIdx >= 0 ? catIdx : det);
     var address = null, phone = null, website = null, hours = null;
-    var start = catIdx >= 0 ? catIdx + 1 : 0;
-    for (var j = start; j < Math.min(lines.length, start + 12); j++) {
+    for (var j = from; j < Math.min(lines.length, from + 25); j++) {
       var l = lines[j];
+      if (/^(препоръчани|featured|публикации|posts|филтри|filters)$/i.test(l)) break;
       if (!phone && /^[+0(][\d\s()\-]{6,}$/.test(l)) { phone = l; continue; }
       if (!website && /^(https?:\/\/)?[a-z0-9\-]+(\.[a-z0-9\-]+)+(\/\S*)?$/i.test(l) && !/facebook\.com/i.test(l)) { website = l; continue; }
-      if (!hours && /^(open now|closed now|отворено|затворено|always open|винаги отворено|opens|отваря)/i.test(l)) { hours = l; continue; }
-      if (!address && catIdx >= 0 && /,/.test(l) && !/%|followers|последователи/i.test(l) && l.length < 160) { address = l.replace(/,\s*,/g, ','); }
+      if (!hours && /^(open now|closed now|отворено|затворено|always open|винаги отворено|opens|отваря|temporarily closed|временно затворено)/i.test(l)) { hours = l; continue; }
+      if (!address && /,/.test(l) && !/%|followers|последовател|\(/i.test(l) && l.length < 160 && !/[.!?]$/.test(l)) {
+        address = l.replace(/,\s*,/g, ',');
+      }
     }
     var first = null;
-    var art = document.querySelector('[role="article"]');
+    var art = main.querySelector('[role="article"]');
     if (art && (F.re.POS.test(txt(art).slice(0, 200)) || F.re.NEG.test(txt(art).slice(0, 200)))) {   // a review, not a post
       var t = txt(art);
       first = { header: (t.split('\n')[0] || '').slice(0, 200), recommends: F.re.NEG.test(t.slice(0, 300)) ? false : (F.re.POS.test(t.slice(0, 300)) ? true : null), text: t.slice(0, 600) };

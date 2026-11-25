@@ -50,7 +50,7 @@ cd "__TOOL_DIR__" && scripts/status.sh
 It prints RUNNING / FINISHED and "какво прави": the tool's own step-by-step lines (`• Търся във Facebook…`,
 `• Локация 2/4: … — отварям ревютата`, `• зареждам ревюта: 45/120`, `• ✓ Записах локацията …`).
 
-- Check it every 1–2 minutes (`sleep 90; scripts/status.sh`) and after EACH check write the user one short update in
+- Check it every 60 seconds (`sleep 60; scripts/status.sh | tail -15`) and after EACH check write the user one short update in
   plain Bulgarian from those lines: what is done, where it is now, what comes next. Example:
   "Намерих бранда (Дивака) и 3 локации. Сега съм на локация 2/3 (Гладстон): заредени 40 от 91 ревюта. Следва 6-ти септември."
 - Keep checking until FINISHED. Do not end your turn while it is RUNNING unless the user asks you to stop following.

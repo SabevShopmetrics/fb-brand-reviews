@@ -386,3 +386,23 @@ def test_brand_section_in_excel(tmp_path):
     assert wb["Ревюта"]["A2"].value == "[Бранд] Lidl България"
     data = json.loads((tmp_path / "r.json").read_text())
     assert data["brand_sections"][0]["stats"]["facebook_recommend_pct"] == 71 and len(data["locations"]) == 1
+
+
+def test_search_cache_and_close(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    loads = []
+    m.fb_open = lambda url: (loads.append(url), {"ok": True, "state": "ok"})[1]
+
+    class H:
+        def js(self, expr):
+            return [] if "searchResults" in expr else None
+    m._h = lambda: H()
+    m.fb_add_locations([{"name": "A", "url": "https://www.facebook.com/a"}])
+    m.fb_search_pages("Дивака", scrolls=1)
+    m.fb_search_pages("Дивака", scrolls=1)            # cached: no second page load
+    assert len(loads) == 1
+    m.fb_search_pages("Дивака Варна", scrolls=1)
+    m.fb_search_pages("Дивака Бургас", scrolls=1)
+    m.fb_add_locations([])                           # third search added nothing -> closed
+    r = m.fb_search_pages("Дивака Русе", scrolls=1)
+    assert isinstance(r, dict) and r["error"] == "search_closed" and len(loads) == 3

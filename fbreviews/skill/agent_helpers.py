@@ -233,11 +233,49 @@ def fb_js(expression):
 
 
 # ------------------------------------------------------------------ discovery
+SEARCH_IDLE_LIMIT = int(_CFG.get("search_idle_limit", 3))
+
+
+def _search_state():
+    return _read("search_state.json", {"queries": {}, "idle": 0, "closed": False})
+
+
+def _search_gate(query, kind):
+    """Repeated queries are answered from the cache (no page load); after SEARCH_IDLE_LIMIT searches in a row that
+    added no location, searching is closed for the run so the agent moves on to extracting."""
+    st = _search_state()
+    if st.get("pending"):  # the previous search was not followed by fb_add_locations: it added nothing
+        st["idle"] = st.get("idle", 0) + 1
+        st.pop("pending", None)
+        if st["idle"] >= SEARCH_IDLE_LIMIT:
+            st["closed"] = True
+        _write("search_state.json", st)
+    key = f"{kind}:{query.strip().lower()}"
+    if key in st["queries"]:
+        _say(f"  (вече търсено: „{query}“ — връщам запомнения резултат)")
+        return st, key, st["queries"][key]
+    if st.get("closed") and fb_locations():
+        _say("  търсенето е приключено (3 поредни без нова локация) — минавам към извличането")
+        return st, key, {"error": "search_closed", "message": "Search is closed for this run: the last searches added no "
+                         "new location. Go to Phase 1b / Phase 2 now: extract the brand Page(s) and every location in "
+                         "fb_progress()['todo']."}
+    return st, key, None
+
+
+def _search_note(st, key, results):
+    st["queries"][key] = results
+    st["pending"] = key
+    _write("search_state.json", st)
+
+
 def fb_search_pages(query, kind="pages", scrolls=6):
     """Facebook search results for `query` (kind 'pages' or 'places'): [{name, url, snippet}].
     The snippet holds what Facebook shows under the name (category, address, followers, rating)."""
     from urllib.parse import quote
 
+    st, key, cached = _search_gate(query, kind)
+    if cached is not None:
+        return cached
     _say(f"Търся във Facebook: „{query}“")
     r = fb_open(f"https://www.facebook.com/search/{kind}/?q={quote(query)}")
     if not r.get("ok"):
@@ -255,7 +293,9 @@ def fb_search_pages(query, kind="pages", scrolls=6):
         if before == len(seen) and _ > 1:
             break
     _say(f"  → {len(seen)} страници в резултатите")
-    return list(seen.values())
+    out = list(seen.values())
+    _search_note(st, key, out)
+    return out
 
 
 def fb_add_locations(items):
@@ -273,6 +313,13 @@ def fb_add_locations(items):
         known.add(url)
         added += 1
     _write("locations.json", locs)
+    st = _search_state()
+    if st.get("pending"):  # one count per search: did the last search bring a new location?
+        st["idle"] = 0 if added else st.get("idle", 0) + 1
+        st.pop("pending", None)
+        if st["idle"] >= SEARCH_IDLE_LIMIT:
+            st["closed"] = True
+        _write("search_state.json", st)
     if added:
         _say(f"Добавени локации: +{added} (общо {len(locs)}): " + ", ".join(l.get("name") or l["url"] for l in locs[-added:])[:300])
     return {"added": added, "total": len(locs), "cap": MAX_LOCATIONS}
@@ -818,6 +865,9 @@ def fb_web_search(query, pages=1):
     'search_challenge' and you stop using web search for this run."""
     from urllib.parse import quote
 
+    st, key, cached = _search_gate(query, "web")
+    if cached is not None:
+        return cached
     h = _h()
     out, seen = [], set()
     for page in range(max(1, pages)):
@@ -842,6 +892,7 @@ def fb_web_search(query, pages=1):
             if url and url not in seen:
                 seen.add(url)
                 out.append({**r, "page_url": url})
+    _search_note(st, key, out)
     return out
 
 

@@ -311,6 +311,14 @@ def _extract_reviews(url, max_reviews=None, name=None):
         return {"status": r.get("state", "unknown"), "reviews_url": rurl, "reviews": [], "notes": r.get("reason", "")}
     opts = {"pageName": name or "", "maxReviews": max_reviews, "steps": 4, "delayMs": 1500}
     reviews, diag = _collect(opts)
+    try:  # the Page header on the same tab (no extra page load): category, followers, price, % recommend
+        head = _run("__fbx.pageSummary()") or {}
+        diag["page"] = {k: head.get(k) for k in ("name", "category", "followers", "price", "website", "phone", "address", "email")
+                        if head.get(k)}
+        if diag.get("recommend_pct") is None and head.get("recommend_pct") is not None:
+            diag["recommend_pct"] = head["recommend_pct"]
+    except Exception:
+        pass
     page_replies = sum(1 for rv in reviews for c in (rv.get("replies") or []) if not c.get("truncated"))
     _say(f"  → {len(reviews)} ревюта (във Facebook: {diag.get('review_total') or '?'}), "
          f"{page_replies} отговора/коментара с текст")
@@ -417,14 +425,20 @@ def _guard(res, max_reviews):
 
 def fb_save_result(location, result, notes="", folder="results"):
     """Save one finished location (call it for EVERY location, also for no_reviews / errors)."""
-    loc = location if isinstance(location, dict) else {"url": str(location)}
+    loc = dict(location if isinstance(location, dict) else {"url": str(location)})
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
+    for k, v in ((result.get("diagnostics") or {}).get("page") or {}).items():
+        if v and not loc.get(k) and k != "name":
+            loc[k] = v
     out = {"location": {**loc, "url": url}, "status": result.get("status", "unknown"),
            "reviews_url": result.get("reviews_url"), "reviews": result.get("reviews", []),
            "review_total": (result.get("diagnostics") or {}).get("review_total"),
            "notes": "; ".join(x for x in (result.get("notes", ""), notes) if x)}
-    if result.get("recommend_pct") is not None:
-        out["recommend_pct"] = result["recommend_pct"]
+    rp = result.get("recommend_pct")
+    if rp is None:
+        rp = (result.get("diagnostics") or {}).get("recommend_pct")   # "80% препоръка" on the reviews tab
+    if rp is not None:
+        out["recommend_pct"] = rp
     _write(f"{folder}/{fb_slug(url)}.json", out)
     _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: "
          f"{out['status']}, {len(out['reviews'])} ревюта")
@@ -849,7 +863,7 @@ def fb_save_summary(location, summary, folder="results"):
     """Save one location in lite mode (results/<slug>.json, status 'summary_only'; or the failure state)."""
     loc = dict(location if isinstance(location, dict) else {"url": str(location)})
     url = fb_page_url(loc.get("url", "")) or loc.get("url")
-    for k in ("category", "address", "phone", "website", "followers"):
+    for k in ("category", "address", "phone", "website", "followers", "price", "email"):
         if summary.get(k) and not loc.get(k):
             loc[k] = summary[k]
     if summary.get("name") and (not loc.get("name") or " " not in loc["name"]):  # a slug like "HappyRakovski"
@@ -863,7 +877,8 @@ def fb_save_summary(location, summary, folder="results"):
                 "date_text": None, "permalink": None, "replies": []}] if first else []
     out = {"location": {**loc, "url": url}, "status": status, "reviews_url": None, "reviews": reviews,
            "review_total": summary.get("review_total"), "recommend_pct": summary.get("recommend_pct"),
-           "notes": "lite mode: public Page data without a Facebook login" + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
+           "notes": ("публични данни без вход (лек режим)" if LITE else "публични данни; страницата няма ревюта/препоръки")
+                    + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
     _write(f"{folder}/{fb_slug(url)}.json", out)
     _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: {status}")
     return {"saved": f"{folder}/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
@@ -909,7 +924,7 @@ def fb_extract_brand(url, name=None, max_reviews=None):
     if summary.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
         return {"status": summary["state"], "url": page, "reason": summary.get("reason")}
     loc = {"name": summary.get("name") or name or page, "url": page, "source": "brand_page"}
-    for k in ("category", "address", "phone", "website", "followers"):
+    for k in ("category", "address", "phone", "website", "followers", "price", "email"):
         if summary.get(k):
             loc[k] = summary[k]
     if LITE or summary.get("state") != "ok":

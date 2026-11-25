@@ -26,6 +26,8 @@ class LocationPage(BaseModel):
     phone: str | None = None
     website: str | None = None
     followers: str | None = None
+    price: str | None = None
+    email: str | None = None
     rating_text: str | None = Field(default=None, description="e.g. '4.3 (120 reviews)' or '87% recommend' if shown")
     source: str | None = Field(default=None, description="Where it was found: locations_tab | search | map | other")
 

@@ -11,6 +11,19 @@ from openpyxl.utils import get_column_letter
 from .models import BrandReport
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3A5F")
+STATUS_BG = {"ok": "готово", "partial": "частично", "summary_only": "само публични данни", "no_reviews": "няма ревюта",
+             "reviews_disabled": "ревютата са изключени", "not_found": "не е намерена", "error": "грешка",
+             "login_required": "иска вход", "blocked": "блокирано"}
+SUMMARY_BG = [
+    ("locations", "Локации"), ("by_status", "Статуси на локациите"),
+    ("facebook_review_total", "Ревюта във Facebook (общо, локации)"), ("reviews", "Извлечени ревюта"),
+    ("recommends", "Препоръчват"), ("not_recommends", "Не препоръчват"), ("recommend_share", "Препоръчват (%)"),
+    ("reviews_with_page_reply", "Ревюта с отговор от страницата"), ("page_replies", "Отговори от страницата"),
+    ("generated", "  от тях генерирани (шаблон / AI)"), ("manual", "  от тях ръчни"), ("uncertain", "  от тях неясни"),
+    ("other_comments", "Други коментари"), ("reviews_with_comments", "Ревюта с коментари"),
+    ("comments_counted", "Коментари (брой по Facebook)"),
+    ("reviews_with_hidden_comments", "Ревюта с коментари, които Facebook не показва"),
+]
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 
 
@@ -71,17 +84,18 @@ def write_excel(report: BrandReport, path: Path) -> None:
         for loc in items:
             st = loc.stats()
             l = loc.location
-            out.append([l.name, l.city, l.country, l.address, l.phone, l.url, loc.status, loc.recommend_pct, loc.review_total, st["reviews"], st["recommends"],
-                        st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
-                        st["reviews_with_page_reply"], st["page_replies"], st["generated"],
-                        st["manual"], st["uncertain"], l.rating_text, loc.notes])
+            out.append([l.name, l.category, l.city, l.address, l.phone, l.website, l.email, l.followers, l.url,
+                        STATUS_BG.get(loc.status, loc.status), loc.recommend_pct, loc.review_total, st["reviews"],
+                        st["recommends"], st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
+                        st["reviews_with_page_reply"], st["page_replies"], st["generated"], st["manual"], st["uncertain"],
+                        loc.notes])
         return out
 
-    PAGE_HEADERS = ["Страница", "Град", "Държава", "Адрес", "Телефон", "Facebook", "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват", "Не препоръчват",
-                    "Ревюта с коментари", "Коментари (брой по FB)",
-                    "Ревюта с отговор от страницата", "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Рейтинг",
-                    "Бележки"]
-    PAGE_WIDTHS = [32, 14, 12, 30, 14, 40, 14, 11, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40]
+    PAGE_HEADERS = ["Страница", "Категория", "Град", "Адрес", "Телефон", "Сайт", "Имейл", "Последователи", "Facebook",
+                    "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват",
+                    "Не препоръчват", "Ревюта с коментари", "Коментари (брой по FB)", "Ревюта с отговор от страницата",
+                    "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Бележки"]
+    PAGE_WIDTHS = [36, 18, 12, 30, 14, 18, 22, 12, 40, 16, 11, 12, 11, 11, 11, 12, 12, 14, 12, 11, 8, 8, 40]
     if report.brand_sections:
         _sheet(wb, "Бранд", PAGE_HEADERS, page_rows(report.brand_sections), PAGE_WIDTHS)
 
@@ -90,20 +104,7 @@ def write_excel(report: BrandReport, path: Path) -> None:
 
     every = list(report.brand_sections) + list(report.locations)
 
-    rows = []
-    for loc in report.locations:
-        st = loc.stats()
-        l = loc.location
-        rows.append([l.name, l.city, l.country, l.address, l.phone, l.url, loc.status, loc.recommend_pct, loc.review_total, st["reviews"], st["recommends"],
-                     st["not_recommends"], st["reviews_with_comments"], st["comments_counted"],
-                     st["reviews_with_page_reply"], st["page_replies"], st["generated"],
-                     st["manual"], st["uncertain"], l.rating_text, loc.notes])
-    _sheet(wb, "Локации",
-           ["Локация", "Град", "Държава", "Адрес", "Телефон", "Facebook", "Статус", "% препоръка (FB)", "Ревюта във FB (общо)", "Извлечени ревюта", "Препоръчват", "Не препоръчват",
-            "Ревюта с коментари", "Коментари (брой по FB)",
-            "Ревюта с отговор от страницата", "Отговори от страницата", "Генерирани", "Ръчни", "Неясни", "Рейтинг",
-            "Бележки"],
-           rows, [32, 14, 12, 30, 14, 40, 14, 11, 12, 11, 11, 13, 12, 12, 14, 12, 11, 8, 8, 16, 40])
+    _sheet(wb, "Локации", PAGE_HEADERS, page_rows(report.locations), PAGE_WIDTHS)
 
     rows = []
     for loc in every:
@@ -131,14 +132,33 @@ def write_excel(report: BrandReport, path: Path) -> None:
             "Отговор", "Дата", "Тип", "Вид генериране", "Увереност", "Сигнали", "Обяснение от модела"],
            rows, [28, 7, 20, 45, 22, 11, 6, 60, 12, 13, 13, 10, 45, 40])
 
-    s = report.summary
-    _sheet(wb, "Обобщение", ["Показател", "Стойност"],
-           [["Бранд", report.brand], ["Генерирано", report.generated_at], ["Модел", report.model],
-            ["Метод за класификация", report.classification_method]]
-           + [[k, str(v)] for k, v in s.items() if k != "brand_pages"]
-           + [[f"Бранд: {b['name']}", f"{b['recommend_pct']}% препоръка, {b['review_total']} ревюта във FB, "
-                                     f"{b['reviews_extracted']} извлечени, {b['page_replies']} отговора от страницата"]
-              for b in s.get("brand_pages", [])],
-           [34, 70])
+    s = dict(report.summary)
+    rec, nrec = s.get("recommends") or 0, s.get("not_recommends") or 0
+    s["recommend_share"] = f"{round(100 * rec / (rec + nrec))}%" if rec + nrec else "—"
+    s["by_status"] = ", ".join(f"{STATUS_BG.get(k, k)}: {v}" for k, v in (s.get("by_status") or {}).items()) or "—"
+    method = report.classification_method or ""
+    if method.startswith("no page replies"):
+        method = "няма отговори от страницата за класифициране"
+    else:
+        method = method.replace("template clusters", "шаблонни клъстери").replace("style heuristics", "стилови сигнали") \
+                       .replace("model judge", "модел")
+    try:
+        from datetime import datetime
+        generated = datetime.fromisoformat(report.generated_at).astimezone().strftime("%d.%m.%Y %H:%M")
+    except ValueError:
+        generated = report.generated_at
+    rows = [["Бранд", report.brand], ["Генерирано", generated], ["Модел", report.model or "—"],
+            ["Класификация на отговорите", method]]
+    for b in s.get("brand_pages", []):
+        bits = [f"{b['recommend_pct']}% препоръка, {b['review_total']} ревюта" if b.get("recommend_pct") is not None
+                else "без препоръки/ревюта на страницата"]
+        if b.get("reviews_extracted"):
+            bits.append(f"{b['reviews_extracted']} извлечени, {b['page_replies']} отговора от страницата")
+        rows.append([f"Страница на бранда: {b['name']}", "; ".join(bits)])
+    for key, label in SUMMARY_BG:
+        if key in s:
+            v = s[key]
+            rows.append([label, "—" if v is None else v])
+    _sheet(wb, "Обобщение", ["Показател", "Стойност"], rows, [44, 80])
     wb.move_sheet("Обобщение", offset=-(len(wb.sheetnames) - 1))
     wb.save(path)

@@ -341,6 +341,7 @@ window.__fbx = (function () {
           /security check|проверка за сигурност|captcha/i.test(body.slice(0, 600)),
         tab_state: F.tabState(out.length),
         review_total: F.reviewTotal(),
+        recommend_pct: F.recommendPct(),
         sample_headers: out.slice(0, 3).map(function (r) { return r.header; }),
         override: F.override,
         override_error: F.overrideError || null
@@ -416,8 +417,18 @@ window.__fbx = (function () {
   }
 
   function reviewTotal() {
-    var m = txt(document.body).match(/\((\d[\d\s.,]*)\s*(отзив|review)/i);
-    return m ? parseInt(m[1].replace(/[^\d]/g, ''), 10) : null;
+    var body = txt(document.querySelector('[role="main"]') || document.body);
+    var m = body.match(/\((\d[\d\s.,]*)\s*(отзив|review)/i)                       // "80% препоръка (8 отзива)"
+         || body.match(/(?:^|\n)\s*(\d[\d\s.,]*)\s*(отзив|отзива|reviews?)\s*(?:\n|$)/i);  // "1 отзив" on its own line
+    if (m) return parseInt(m[1].replace(/[^\d]/g, ''), 10);
+    if (/(?:^|\n)\s*(няма отзиви|no reviews( yet)?)\s*(?:\n|$)/i.test(body)) return 0;
+    return null;
+  }
+
+  function recommendPct() {
+    var m = txt(document.querySelector('[role="main"]') || document.body)
+      .match(/(\d{1,3})\s*%\s*(препоръка|recommend|recomienda|recommandent|empfehlen|consigliano|recomenda|poleca|recomandă)/i);
+    return m ? parseInt(m[1], 10) : null;
   }
 
   F.re = { EXPAND: EXPAND, COMMENT_LABEL: COMMENT_LABEL, NEG: NEG, POS: POS, UI_NOISE: UI_NOISE,
@@ -465,11 +476,19 @@ window.__fbx = (function () {
       var m = lines[i].match(/^(Page|Страница|Página|Seite|Pagina|Strona|Σελίδα|Sayfa)\s*·\s*(.+)$/i);
       if (m) { catIdx = i; category = m[2].trim(); break; }
     }
-    if (!category) {  // logged-in: "<description>" then "<category>" then "Още" in the header
+    var price = null;
+    if (!category) {  // logged-in: "<description>" then "<category>" [" · $$"] then "Още" in the header
       var more = head.findIndex(function (l) { return /^(още|more)$/i.test(l); });
-      var cand = more > 0 ? head[more - 1] : null;
-      if (cand && cand.length < 50 && !/\d|%|·/.test(cand) && !LABEL.test(cand) && cand !== name) { category = cand; catIdx = more - 1; }
+      for (var k = more - 1; k > 0 && k >= more - 4; k--) {
+        var cand = head[k];
+        var pm = cand.match(/^[·\s]*(\${1,4})\s*$/);
+        if (pm) { price = pm[1]; continue; }
+        if (!cand.replace(/[·\s]/g, '')) continue;
+        if (cand.length < 50 && !/\d|%/.test(cand) && !LABEL.test(cand) && cand !== name) { category = cand.replace(/\s*·.*$/, ''); catIdx = k; }
+        break;
+      }
     }
+    var emailM = body.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/);
     var det = lines.findIndex(function (l) { return /^(подробности|details|intro|представяне|въведение)$/i.test(l); });
     // logged-out: "Intro/Въведение" → "Page · category" → address, phone, site;  logged-in: category in the header,
     // address etc. under "Подробности/Details" further down
@@ -495,6 +514,7 @@ window.__fbx = (function () {
     return {
       url: location.href.split('?')[0], name: name, category: category, address: address, phone: phone,
       website: website, hours: hours, followers: followers ? followers[1].trim() : null,
+      price: price, email: emailM ? emailM[0] : null,
       recommend_pct: rec ? parseInt(rec[1], 10) : null,
       review_total: rec ? parseInt(rec[3].replace(/[^\d]/g, ''), 10) : null,
       first_review: first, state: pageState().state,
@@ -526,7 +546,7 @@ window.__fbx = (function () {
   }
 
   F.scroll = scroll; F.sweep = sweep; F.pageSummary = pageSummary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
-  F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal;
+  F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal; F.recommendPct = recommendPct;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}
   return F;

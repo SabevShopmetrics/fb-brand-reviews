@@ -439,7 +439,7 @@ window.__fbx = (function () {
     if (/^\/checkpoint/.test(path) || document.querySelector('iframe[src*="captcha"], iframe[title*="captcha" i]') ||
         /(security check|проверка за сигурност|confirm (that )?you'?re (a )?human|потвърдете, че сте човек|temporarily blocked|временно блокиран|you'?re temporarily blocked)/i.test(body))
       return { state: 'blocked', url: location.href };
-    if (/(this content isn'?t available|това съдържание (в момента )?не е налично|page not found|страницата не е намерена|this page isn'?t available)/i.test(body))
+    if (/(this content isn'?t available|това съдържание (в момента )?не е налично|page not found|страницата не е намерена|this page isn'?t available|тази страница не е налична|връзката може да е повредена)/i.test(body))
       return { state: 'not_found', url: location.href };
     return { state: 'ok', url: location.href };
   }

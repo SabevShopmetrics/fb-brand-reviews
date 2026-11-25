@@ -431,8 +431,27 @@ def _extract_reviews(url, max_reviews=None, name=None):
                    "notes": "; ".join(notes), "threads_tried": tried}, max_reviews)
 
 
+COLLECT_CACHE_S = 3 * 3600  # a page's reviews collected in the last 3 h are reused (preflight + extract = one pass)
+
+
 def _collect(opts, reset=False):
-    """Scroll the open reviews tab until everything is loaded, then extract → (reviews, diagnostics)."""
+    """Scroll the open reviews tab until everything is loaded, then extract → (reviews, diagnostics).
+    The result is cached per page for 3 h: the preflight's sample page is not scrolled again in Phase 2."""
+    try:
+        here = fb_page_url(_h().js("location.href") or "") or ""
+    except Exception:
+        here = ""
+    cache = _read(f"cache/{fb_slug(here)}.json", {}) if here else {}
+    if cache.get("reviews") and time.time() - cache.get("at", 0) < COLLECT_CACHE_S and not reset:
+        _say(f"  използвам току-що извлечените {len(cache['reviews'])} ревюта (без ново скролване)")
+        return cache["reviews"], cache.get("diag", {})
+    reviews, diag = _collect_live(opts, reset)
+    if here and reviews:
+        _write(f"cache/{fb_slug(here)}.json", {"at": time.time(), "reviews": reviews, "diag": diag})
+    return reviews, diag
+
+
+def _collect_live(opts, reset=False):
     if reset:
         _run("__fbx.reset()")
     st = {}

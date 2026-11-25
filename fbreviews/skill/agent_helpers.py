@@ -132,6 +132,21 @@ def fb_stopped():
     return p.read_text() if p.exists() else None
 
 
+def _say(msg):
+    """One line of progress for the user (Bulgarian): progress.log in the workspace, shown live in the run log."""
+    line = f"{time.strftime('%H:%M:%S')} {msg}"
+    try:
+        with open(_WS / "progress.log", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+    print("•", msg)
+
+
+def _short(url):
+    return (url or "").replace("https://www.facebook.com/", "facebook/").replace("https://", "")[:90]
+
+
 def _stop(reason):
     (_WS / "STOP").write_text(reason)
 
@@ -186,11 +201,13 @@ def fb_open(url):
     if pace.get("day") != today:
         pace = {"day": today, "pages": 0, "last": 0}
     if pace["pages"] >= DAILY_PAGE_CAP:
+        _say(f"⏸ Дневният лимит от {DAILY_PAGE_CAP} страници е достигнат — продължава утре (--resume)")
         return {"ok": False, "state": "cap_reached", "reason": f"daily cap of {DAILY_PAGE_CAP} page loads reached"}
     gap = random.uniform(PACE_MIN, PACE_MAX) - (time.time() - pace.get("last", 0))
     if gap > 0:
         time.sleep(gap)
     h = _h()
+    _say(f"Отварям {_short(url)}")
     h.goto_url(url)
     try:
         h.wait_for_load(20)
@@ -204,6 +221,7 @@ def fb_open(url):
     if LITE and state.get("state") == "login_required" and "/login" not in (state.get("url") or ""):
         state = {**state, "state": "ok", "logged_out": True}
     if state.get("state") in ("login_required", "blocked"):
+        _say("⛔ Facebook поиска вход или проверка за сигурност — спирам (не я заобикалям)")
         _stop(f"{state['state']} at {url}")
     return {"ok": state.get("state") == "ok", **state}
 
@@ -220,6 +238,7 @@ def fb_search_pages(query, kind="pages", scrolls=6):
     The snippet holds what Facebook shows under the name (category, address, followers, rating)."""
     from urllib.parse import quote
 
+    _say(f"Търся във Facebook: „{query}“")
     r = fb_open(f"https://www.facebook.com/search/{kind}/?q={quote(query)}")
     if not r.get("ok"):
         return {"error": r}
@@ -235,6 +254,7 @@ def fb_search_pages(query, kind="pages", scrolls=6):
         time.sleep(random.uniform(1.5, 3.0))
         if before == len(seen) and _ > 1:
             break
+    _say(f"  → {len(seen)} страници в резултатите")
     return list(seen.values())
 
 
@@ -253,6 +273,8 @@ def fb_add_locations(items):
         known.add(url)
         added += 1
     _write("locations.json", locs)
+    if added:
+        _say(f"Добавени локации: +{added} (общо {len(locs)}): " + ", ".join(l.get("name") or l["url"] for l in locs[-added:])[:300])
     return {"added": added, "total": len(locs), "cap": MAX_LOCATIONS}
 
 
@@ -280,11 +302,18 @@ def _extract_reviews(url, max_reviews=None, name=None):
     not_found | login_required | blocked | stopped | cap_reached | unknown | suspect (+ fallback_status)."""
     max_reviews = max_reviews or MAX_REVIEWS
     rurl = fb_reviews_url(url)
+    locs = fb_locations()
+    pos = next((i for i, l in enumerate(locs, 1) if fb_page_url(l.get("url", "")) == fb_page_url(url)), None)
+    where = f"Локация {pos}/{len(locs)}" if pos else "Страница"
+    _say(f"{where}: {name or _short(url)} — отварям ревютата")
     r = fb_open(rurl)
     if not r.get("ok"):
         return {"status": r.get("state", "unknown"), "reviews_url": rurl, "reviews": [], "notes": r.get("reason", "")}
     opts = {"pageName": name or "", "maxReviews": max_reviews, "steps": 4, "delayMs": 1500}
     reviews, diag = _collect(opts)
+    page_replies = sum(1 for rv in reviews for c in (rv.get("replies") or []) if not c.get("truncated"))
+    _say(f"  → {len(reviews)} ревюта (във Facebook: {diag.get('review_total') or '?'}), "
+         f"{page_replies} отговора/коментара с текст")
     notes = []
     if not reviews:
         status = diag.get("tab_state") or "unknown"
@@ -353,12 +382,17 @@ def _collect(opts, reset=False):
         _run("__fbx.reset()")
     st = {}
     deadline = time.time() + SCROLL_MAX_S
+    last_count = -1
     while time.time() < deadline:
         st = _run("__fbx.scroll(" + json.dumps(opts) + ")") or {}
+        if st.get("count") != last_count:
+            last_count = st.get("count")
+            _say(f"  зареждам ревюта: {st.get('count')}/{st.get('target') if (st.get('target') or 0) < 100000 else '?'}")
         if st.get("done"):
             break
     sw = {}
     if time.time() < deadline:   # second slow pass in the same page: late reply previews, expanded texts
+        _say("  второ минаване по списъка за отговорите на страницата…")
         sw = _run("__fbx.sweep(" + json.dumps({**opts, "sweepMaxMs": int(max(30, min(1800, deadline - time.time())) * 1000)}) + ")") or {}
     data = _run("__fbx.extract(" + json.dumps(opts) + ")") or {}
     diag = data.get("diagnostics", {}) or {}
@@ -392,6 +426,8 @@ def fb_save_result(location, result, notes="", folder="results"):
     if result.get("recommend_pct") is not None:
         out["recommend_pct"] = result["recommend_pct"]
     _write(f"{folder}/{fb_slug(url)}.json", out)
+    _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: "
+         f"{out['status']}, {len(out['reviews'])} ревюта")
     partial = _WS / "results" / f"_partial_{fb_slug(url)}.json"
     if partial.exists():
         partial.unlink()
@@ -775,7 +811,9 @@ def fb_web_search(query, pages=1):
         time.sleep(2.5)
         _last_search[0] = time.time()
         text = h.js("document.body.innerText.slice(0, 1500)") or ""
+        _say(f"Търся в Bing: „{query}“")
         if SEARCH_CHALLENGE.search(text):
+            _say("  Bing поиска CAPTCHA — спирам търсенето там (не я решавам)")
             return {"error": "search_challenge", "engine": "bing", "query": query}
         for r in h.js(_bundle("__fbx.webResults()")) or []:
             url = fb_page_url(r.get("url", ""))
@@ -801,6 +839,9 @@ def fb_page_summary(url):
         time.sleep(2)
     s["state"] = "ok"
     s["url"] = page
+    rec = (f"{s['recommend_pct']}% препоръка, {s.get('review_total')} ревюта" if s.get("recommend_pct") is not None
+           else "без препоръки/ревюта")
+    _say(f"  публични данни: {s.get('name') or _short(page)} — {rec}, {s.get('address') or 'без адрес'}")
     return s
 
 
@@ -824,6 +865,7 @@ def fb_save_summary(location, summary, folder="results"):
            "review_total": summary.get("review_total"), "recommend_pct": summary.get("recommend_pct"),
            "notes": "lite mode: public Page data without a Facebook login" + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
     _write(f"{folder}/{fb_slug(url)}.json", out)
+    _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: {status}")
     return {"saved": f"{folder}/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
             "review_total": summary.get("review_total")}
 
@@ -841,6 +883,7 @@ def fb_add_brand_pages(items):
         if not url or url in known:
             continue
         pages.append({"name": it.get("name"), "url": url, "scope": it.get("scope")})
+        _say(f"Официална страница на бранда: {it.get('name') or _short(url)}")
         known.add(url)
         added += 1
     _write("brand_pages.json", pages)
@@ -861,6 +904,7 @@ def fb_extract_brand(url, name=None, max_reviews=None):
     website, % recommend, number of reviews) and — when logged in (not lite) — its reviews with the Page's replies,
     exactly like a location. Returns what was saved, or the stop state."""
     page = fb_page_url(url) or url
+    _say(f"Бранд: извличам „{name or _short(page)}“ (отделен раздел)")
     summary = fb_page_summary(page)
     if summary.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
         return {"status": summary["state"], "url": page, "reason": summary.get("reason")}

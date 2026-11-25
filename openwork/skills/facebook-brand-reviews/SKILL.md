@@ -43,16 +43,24 @@ The first run installs itself (2–3 minutes).
 **While a run is going (full or lite, not lite-hidden), do not use the built-in browser** (no browser tools at all): the tool drives the Facebook tab and
 any click or navigation of yours breaks its run. Tell the user the same: don't touch the Facebook tab.
 
-## Follow
+## Follow — keep the user informed until there is a result
 ```bash
 cd "__TOOL_DIR__" && scripts/status.sh
 ```
-Shows RUNNING / FINISHED, the key log lines (`Рунд N`, `→ локации X, готови Y`) and, when done, the report paths.
-Check it when the user asks, or about every 3–5 minutes while you wait. It is slow on purpose (6–14 s between
-pages) to keep the Facebook account safe; with all reviews a large location can take many minutes, a big brand hours.
-That is expected: let it run, report progress, never stop it to save time.
+It prints RUNNING / FINISHED and "какво прави": the tool's own step-by-step lines (`• Търся във Facebook…`,
+`• Локация 2/4: … — отварям ревютата`, `• зареждам ревюта: 45/120`, `• ✓ Записах локацията …`).
+
+- Check it every 1–2 minutes (`sleep 90; scripts/status.sh`) and after EACH check write the user one short update in
+  plain Bulgarian from those lines: what is done, where it is now, what comes next. Example:
+  "Намерих бранда (Дивака) и 3 локации. Сега съм на локация 2/3 (Гладстон): заредени 40 от 91 ревюта. Следва 6-ти септември."
+- Keep checking until FINISHED. Do not end your turn while it is RUNNING unless the user asks you to stop following.
+- Never stop, restart or start a second run yourself; only one run at a time (`ALREADY_RUNNING` = follow it). If the
+  user has another session running the tool, tell them instead of starting your own.
+- It is slow on purpose (6–14 s between pages) to keep the account safe; a large brand can take hours. That is normal.
 
 ## When it is finished
+- Say clearly that it is finished, then give the files: the Excel `report.xlsx` (sheets Обобщение, Бранд, Локации,
+  Ревюта, Отговори) and `report.json` — full paths from `status.sh`; offer to open the Excel (`open "<path>"`).
 - Read `report.json` (path from `status.sh`). Reply with: number of locations and their statuses, total reviews,
   % recommend / not recommend, reviews with comments and comments counted, and a short table per location
   (name, city, reviews, recommend %, comments). Give the Excel path (`report.xlsx`) for the details.

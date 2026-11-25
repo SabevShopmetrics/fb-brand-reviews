@@ -154,6 +154,27 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
     return report
 
 
+async def _tail_progress(path: Path, stop: asyncio.Event, progress) -> None:
+    """Show the agent's progress lines (progress.log, written by the skill helpers) live in the run log."""
+    pos = path.stat().st_size if path.exists() else 0
+    while True:
+        done = stop.is_set()
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                f.seek(pos)
+                chunk = f.read()
+                pos = f.tell()
+            for line in chunk.splitlines():
+                if line.strip():
+                    progress(f"   • {line}")
+        if done:
+            return
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def run(
     brand: str,
     s: Settings,
@@ -245,9 +266,12 @@ async def run(
         browser = Browser(cdp_url=bridge.url, keep_alive=True)
     llm = make_llm(s)
     try:
+        idle_rounds = 0
         for round_no in range(len(meta["rounds"]) + 1, len(meta["rounds"]) + 1 + s.max_rounds):
             before = progress_of(run_dir)
             progress(f"Рунд {round_no}: агентът работи… (локации {before['locations']}, готови {before['done']})")
+            tail_stop = asyncio.Event()
+            tail = asyncio.create_task(_tail_progress(ws / "progress.log", tail_stop, progress))
             try:
                 summary = await run_agent(brand, s=s, llm=llm, browser=browser, workspace=ws, country=country,
                                           max_locations=max_locations, hint=hint, round_no=round_no,
@@ -256,6 +280,9 @@ async def run(
             except Exception as e:
                 logger.exception("agent round failed")
                 sm = {"stop_reason": "error", "notes": f"{type(e).__name__}: {e}", "complete": False}
+            finally:
+                tail_stop.set()
+                await tail
             if sm.get("brand_pages"):
                 meta["brand_pages"] = sorted(set(meta.get("brand_pages", [])) | set(sm["brand_pages"]))
             after = progress_of(run_dir)
@@ -272,12 +299,17 @@ async def run(
                 break
             no_progress = after["done"] == before["done"] and after["locations"] == before["locations"]
             if no_progress:
+                idle_rounds += 1
                 if any(t in str(sm.get("notes", "")) for t in TRANSIENT):
                     progress("   моделът не отговаря; нов опит след 60 сек…")
                     await asyncio.sleep(60)
                     continue
-                progress("   рундът не донесе напредък — спирам, за да не въртя напразно.")
-                break
+                if idle_rounds >= 3:
+                    progress("   3 рунда подред без напредък — спирам и правя отчет с това, което е събрано.")
+                    break
+                progress(f"   рундът не донесе напредък — опитвам отново ({idle_rounds}/3)…")
+            else:
+                idle_rounds = 0
     finally:
         try:
             await browser.stop()

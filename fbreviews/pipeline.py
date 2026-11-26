@@ -123,7 +123,7 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
                                       review_total=int(rt) if isinstance(rt, (int, float)) else None,
                                       recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or ""),
-                                      is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", "")),
+                                      is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", ""), loc.get("name")),
                                       posts_collected=(ws / "posts" / f"{fburl_slug(loc.get('url', ''))}.json").exists(),
                                       ads=[Ad(**{k: v for k, v in a.items() if k in Ad.model_fields})
                                            for a in d.get("ads") or [] if isinstance(a, dict)]))
@@ -133,22 +133,64 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
     return out
 
 
-def load_posts(ws: Path, url: str) -> list[Post]:
+_REPLY_TO = re.compile(r"\s+(?:на коментара на|на отговора на|в отговор на)\s+(.+)$|\s+to\s+(.+?)['’]s\s+(?:comment|reply)\b.*$",
+                       re.I)
+
+
+def _norm_name(s: str | None) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def same_page(author: str | None, names) -> bool:
+    """A comment author is the Page itself: the same name, or one is the other plus a short suffix
+    ("Raffy Bar & Gelato Mladost" for the Page "Raffy Bar & Gelato Mladost 2")."""
+    a = _norm_name(author)
+    if len(a) < 4:
+        return False
+    for n in names:
+        n = _norm_name(n)
+        if not n:
+            continue
+        if a == n:
+            return True
+        short, long_ = sorted((a, n), key=len)
+        if len(short) >= 8 and long_.startswith(short + " ") and len(long_) - len(short) <= 12:
+            return True
+    return False
+
+
+def clean_comment(c: dict, names) -> dict:
+    """Facebook labels a reply "Отговор от <author> на коментара на <someone>": split the two, then tell the
+    Page's own replies by name (older files kept the whole label as the author)."""
+    c = dict(c)
+    m = _REPLY_TO.search(str(c.get("author") or ""))
+    if m:
+        c["reply_to"] = (m.group(1) or m.group(2) or "").strip() or c.get("reply_to")
+        c["author"] = str(c["author"])[:m.start()].strip()
+        c["depth"] = 2
+    c["is_page_reply"] = bool(c.get("is_page_reply")) or same_page(c.get("author"), names)
+    return c
+
+
+def load_posts(ws: Path, url: str, name: str | None = None) -> list[Post]:
     """posts/<slug>.json of one Page (Phase 3 / 4) → Post list; [] when the Page has none yet."""
     f = ws / "posts" / f"{fburl_slug(url)}.json" if url else None
     if not f or not f.exists():
         return []
     try:
-        raw = json.loads(f.read_text()).get("posts") or []
+        data = json.loads(f.read_text())
+        raw = data.get("posts") or []
     except (OSError, ValueError, AttributeError):
         return []
+    names = [n for n in (name, data.get("name")) if n]
     out = []
     for p in raw:
         if not isinstance(p, dict):
             continue
         cl = p.get("comments_list")
-        comments = None if cl is None else [PostComment(**{k: v for k, v in c.items() if k in PostComment.model_fields})
-                                            for c in cl if isinstance(c, dict)]
+        comments = None if cl is None else [
+            PostComment(**{k: v for k, v in clean_comment(c, names).items() if k in PostComment.model_fields})
+            for c in cl if isinstance(c, dict)]
         fields = {k: v for k, v in p.items() if k in Post.model_fields and k != "comments_list"}
         for k in ("comments", "shares", "photos"):
             fields[k] = int(fields.get(k) or 0)

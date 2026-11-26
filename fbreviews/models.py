@@ -107,6 +107,7 @@ class PostComment(BaseModel):
     date_text: str | None = None
     depth: int = 1
     is_page_reply: bool = False
+    reply_to: str | None = None           # a reply: whose comment / reply it answers
     tags_only: bool = False               # only tagged friends / a sticker: reach, not an opinion
     intent: str | None = None             # insights: question | praise | complaint | mention | other
     sentiment: Literal["positive", "neutral", "negative"] | None = None

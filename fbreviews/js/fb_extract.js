@@ -868,7 +868,12 @@ window.__fbx = (function () {
       var label = a.getAttribute('aria-label') || '';
       var m = label.match(/^(коментар|отговор|comment|reply)\s+(от|by)\s+(.+?)\s+((преди|before|\d).*|току-що|just now)?$/i);
       if (!m) return;
-      var author = m[3].trim(), when = (m[4] || '').trim();
+      var author = m[3].trim(), when = (m[4] || '').trim(), replyTo = null;
+      var rt = author.match(/\s+(?:на коментара на|на отговора на|в отговор на)\s+(.+)$|\s+to\s+(.+?)['’]s\s+(?:comment|reply)\b.*$/i);
+      if (rt) { replyTo = (rt[1] || rt[2] || '').trim(); author = author.slice(0, rt.index).trim(); }
+      var normName = function (s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); };
+      var isPage = (function () { var a = normName(author), n = normName(pageName); if (!a || !n) return false; if (a === n) return true;
+        var sh = a.length < n.length ? a : n, lg = a.length < n.length ? n : a; return sh.length >= 8 && lg.indexOf(sh + ' ') === 0 && lg.length - sh.length <= 12; })();
       var lines = txt(a).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
       var body = lines.filter(function (l, i) {
         return !(i === 0 && l === author) && l !== '·' && !/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|отговор|харесване|reply|like|редактирано|edited|автор|author|най-активен фен|top fan|\d+)$/i.test(l) && !/^·?\s*\d+\s*(мин|ч|д|сед|г)/.test(l);
@@ -876,10 +881,10 @@ window.__fbx = (function () {
       var text = body.join('\n').replace(/(харесване|отговор|like|reply)+$/i, '').trim();
       var k = author + '|' + when + '|' + text.slice(0, 80);
       if (seen[k]) return; seen[k] = 1;
-      var depth = /^(отговор|reply)/i.test(m[1]) || a.parentElement.closest('[role="article"][aria-label]') ? 2 : 1;
+      var depth = replyTo || /^(отговор|reply)/i.test(m[1]) || a.parentElement.closest('[role="article"][aria-label]') ? 2 : 1;
       var tagsOnly = text && text.split(/\s{2,}|\n/).every(function (s) { return /^[A-ZА-Я][\p{L}'.-]+(\s+[A-ZА-Я][\p{L}'.-]+){0,3}$/u.test(s.trim()) || !s.trim(); });
       out.push({ author: author, text: text, date_text: when, depth: depth,
-                 is_page_reply: !!pageName && author.toLowerCase() === String(pageName).toLowerCase(), tags_only: !!tagsOnly });
+                 is_page_reply: isPage, reply_to: replyTo, tags_only: !!tagsOnly });
     });
     return { found: !!root, comments: out };
   }

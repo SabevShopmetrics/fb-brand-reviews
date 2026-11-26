@@ -372,7 +372,9 @@ function metrics(sl) {
   const posts = sl.posts, c90 = new Date(refDate - 90 * 864e5), fol = sl.pages.reduce((a, p) => a + (folNum(p.location.followers) || 0), 0);
   const eng = posts.length ? Math.round(posts.reduce((a, x) => a + x._eng, 0) / posts.length) : null;
   const qc = sl.comments.filter(c => (c.intent === 'question' || c.intent === 'complaint') && !c.is_page_reply && (c.depth || 1) === 1);
-  const isAnswered = c => (c._post.comments_list || []).slice(c._ci + 1, c._ci + 6).some(x => x.is_page_reply);
+  const isAnswered = c => { const cl = c._post.comments_list || [], a = (c.author || '').trim().toLowerCase();
+    for (let i = c._ci + 1; i < cl.length && (cl[i].depth || 1) !== 1; i++) if (cl[i].is_page_reply) return true;
+    return !!a && cl.some(x => x.is_page_reply && (x.reply_to || '').trim().toLowerCase() === a); };
   const qa = qc.filter(isAnswered);
   return {reviews: R.length, rec, nrec, share: pct(rec, rec + nrec), fb: fbT ? Math.round(fbW.reduce((a, p) => a + p.recommend_pct * p.review_total, 0) / fbT) : null,
     fbTotal: sl.pages.reduce((a, p) => a + (p.review_total || 0), 0), neg: neg.length, negShare: pct(neg.length, R.length), negRepRate: pct(negRep, neg.length),

@@ -460,7 +460,16 @@ def content_insights(res: LocationResult) -> dict:
     for p in posts:
         cl = p.comments_list or []
         for i, c in enumerate(cl):
-            if c in questions and any(x.is_page_reply for x in cl[i + 1:i + 6] if x.depth == 2):
+            if c not in questions:
+                continue
+            thread = []
+            for x in cl[i + 1:]:
+                if x.depth == 1:
+                    break
+                thread.append(x)
+            to_author = [x for x in cl if x.is_page_reply and x.reply_to and c.author
+                         and x.reply_to.strip().lower() == c.author.strip().lower()]
+            if any(x.is_page_reply for x in thread) or to_author:
                 answered += 1
     top = sorted(zip(posts, eng), key=lambda pe: -pe[1])[:5]
     avg = round(sum(eng) / len(eng), 1) if eng else None

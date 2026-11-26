@@ -599,3 +599,32 @@ def test_posts_survive_slow_steps(tmp_path, monkeypatch):
     r = m.fb_extract_posts("https://www.facebook.com/bigpage", name="Big")
     assert r["status"] == "ok" and r["posts"] == 50
     assert len(m._read("posts/bigpage.json", {})["posts"]) == 50
+
+
+def test_page_replies_in_comments_are_recognised(tmp_path):
+    """Regression (Raffy): Facebook labels a reply "<author> на коментара на <someone>"; the Page's own replies
+    must count as Page replies, and the question they answer as answered."""
+    from fbreviews.pipeline import load_posts, same_page
+    from fbreviews.insights import content_insights
+    from fbreviews.models import LocationPage, LocationResult
+    assert same_page("Raffy Bar &  Gelato Mladost", ["Raffy Bar & Gelato Mladost 2"])
+    assert not same_page("Raffy Sanchez Abadjiev", ["Raffy Gelato"])
+    ws = tmp_path / "workspace"
+    (ws / "posts").mkdir(parents=True)
+    (ws / "posts" / "raffy.json").write_text(json.dumps({"name": "Raffy Bar & Gelato", "posts": [{
+        "permalink": "p1", "comments": 3, "comments_list": [
+            {"author": "Иван Иванов", "text": "Работите ли в неделя?", "depth": 1, "is_page_reply": False},
+            {"author": "Raffy Bar & Gelato на коментара на Иван Иванов", "text": "Да, до 22 ч.", "depth": 1,
+             "is_page_reply": False},
+            {"author": "Иван Иванов на отговора на Raffy Bar & Gelato", "text": "Благодаря", "depth": 1,
+             "is_page_reply": False}]}]}, ensure_ascii=False))
+    posts = load_posts(ws, "https://www.facebook.com/raffy", "Raffy Bar & Gelato")
+    cl = posts[0].comments_list
+    assert [c.author for c in cl] == ["Иван Иванов", "Raffy Bar & Gelato", "Иван Иванов"]
+    assert [c.is_page_reply for c in cl] == [False, True, False] and cl[1].reply_to == "Иван Иванов"
+    assert [c.depth for c in cl] == [1, 2, 2]
+    cl[0].intent = "question"
+    res = LocationResult(location=LocationPage(name="Raffy Bar & Gelato", url="https://www.facebook.com/raffy"),
+                         status="ok", posts=posts, posts_collected=True)
+    ci = content_insights(res)
+    assert ci["questions_or_complaints"] == 1 and ci["questions_answered"] == 1, ci

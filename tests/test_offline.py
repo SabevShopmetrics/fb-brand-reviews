@@ -167,4 +167,4 @@ def test_excel_with_structured_actions(tmp_path):
                                                  "actions": [{"text": "Отговорете", "priority": "high", "because": "t"}, "низ"]}}
     write_excel(report, tmp_path / "r.xlsx")
     rows = [[c.value for c in r] for r in load_workbook(tmp_path / "r.xlsx")["Изводи"].iter_rows(min_row=2)]
-    assert ["Следваща стъпка (спешно)", "Отговорете", "t"] in rows and ["Следваща стъпка", "низ", ""] in rows
+    assert ["Следваща стъпка (спешно)", "Отговорете", "t"] in rows and ["Следваща стъпка", "низ", None] in rows

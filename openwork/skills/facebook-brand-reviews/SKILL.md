@@ -1,6 +1,6 @@
 ---
 name: facebook-brand-reviews
-description: Collect Facebook reviews (recommendations) for every location of a brand or chain, split by location, into one report (JSON + Excel). Use when the user asks for Facebook reviews / отзиви / ревюта / препоръки of a brand, store, chain or its locations (e.g. "извлечи ревютата на Zara от Facebook", "Facebook reviews for all Happy Bar & Grill locations").
+description: Full Facebook picture of a brand or chain — every location's reviews with the Page's replies, the posts, the comments under them, active ads, and business conclusions — into one report and the all-brands dashboard. Use when the user's message is just a brand / store / chain name (e.g. "Дивака", "Zara", "Лидл") or asks for anything about a brand on Facebook (ревюта, отзиви, препоръки, постове, коментари, реклами, локации).
 ---
 
 # Facebook ревюта по локации на бранд
@@ -10,6 +10,14 @@ collects each location's reviews through **this OpenWork's built-in browser**. Y
 report the result. Do not scrape Facebook yourself and do not edit the tool's code.
 
 Tool folder (TOOL_DIR): `__TOOL_DIR__`
+
+## A brand name alone is the whole request
+If the user writes only a brand name ("Дивака", "Zara"), that means: start the full run for that brand now, with the
+defaults below, follow it to the end and open the dashboard. Do not ask what to collect and do not ask for
+confirmation. Defaults (never add limits on your own): all locations, all reviews with the Page's replies, the brand's
+own Pages, every Page's posts and the comments under them, active ads, the whole world, then the business
+conclusions. Only change a default when the user says so in words: "само ревюта" / "без постове" → 6th argument
+`noposts`; a country → 5th argument; "бърз тест" / numbers → max locations / max reviews.
 
 ## Logged in or not — automatic (never choose the mode yourself)
 The tool decides by itself: logged in to Facebook in the built-in browser → FULL mode (all reviews, the Page's
@@ -29,8 +37,8 @@ When you report the result, give the per-country summary first.
    never log in for them.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill
    `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `TOOL_DIR/.env` (open it for them). Never print the key.
-3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING: all locations, all reviews, the
-   brand's own Pages. Never add limits on your own; use numbers only if the user explicitly asks for a quick test.
+3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING (see "A brand name alone").
+   Never add limits on your own; use numbers only if the user explicitly asks for a quick test.
 
 ## Run
 ```bash

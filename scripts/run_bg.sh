@@ -28,7 +28,8 @@ else
     lite|--lite) args+=(--lite) ;;
     lite-hidden|hidden) args+=(--lite --hidden) ;;
   esac
-  [ -n "$5" ] && args+=(--country "$5")
+  [ -n "$5" ] && [ "$5" != "all" ] && args+=(--country "$5")
+  case "${6:-}" in noposts|--no-posts) args+=(--no-posts) ;; esac
 fi
 nohup zsh scripts/_job.sh "${args[@]}" > "$log" 2>&1 < /dev/null &
 echo $! > output/runs/current.pid

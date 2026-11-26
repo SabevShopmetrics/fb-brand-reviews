@@ -305,12 +305,20 @@ manager about the business. Rules:
   topic vs topic, positive vs negative).
 - Every action must follow from a finding and agree with the numbers: never suggest more of a content type or topic
   that performs WORSE than the others; never recommend something the data cannot support.
+- Missing is not zero: posts_collected / comments_collected / ads_checked false means we did NOT collect that part
+  for the page — say nothing about posting, comments or ads for it (never "0 posts", never "start posting").
+  A field that is null means unknown, not zero.
+- Actions are for the brand's managers: what to do on Facebook and with customers. Never actions about this report,
+  about collecting more data, or asking anyone (an owner, Facebook) for data.
 - Name pages and locations as given. Write plain Bulgarian for a manager: never field names (reply_rate,
   template_share, ads_active…) — say "отговаря на 15% от ревютата", "80% от отговорите са шаблонни". Be specific and short.
 Return only JSON:
 {"headline": "one sentence: the main finding",
- "findings": [{"title": "short", "text": "2-3 sentences with the numbers", "tone": "good|bad|neutral"}],   // 4-8
- "actions": ["a concrete next step, one sentence"]}   // 2-5"""
+ "findings": [{"title": "short", "text": "2-3 sentences with the numbers", "tone": "good|bad|neutral",
+               "metric": "the ONE key number of this finding as shown, e.g. \"80%\" or \"13\"",
+               "metric_label": "2-4 words: what the number is, e.g. \"от отговорите са шаблонни\""}],   // 4-8
+ "actions": [{"text": "a concrete next step, one sentence", "priority": "high|medium",
+              "because": "the finding title it follows from"}]}   // 2-5"""
 
 
 async def _llm_json(system: str, payload: dict, llm: dict) -> dict:
@@ -458,6 +466,9 @@ def content_insights(res: LocationResult) -> dict:
     avg = round(sum(eng) / len(eng), 1) if eng else None
     return {
         "name": res.location.name, "url": res.location.url, "is_brand": res.is_brand,
+        "posts_collected": bool(res.posts_collected or posts),
+        "comments_collected": any(p.comments_list is not None for p in posts),
+        "ads_checked": res.location.ads_active is not None,
         "followers": followers, "reviews_by_month": dict(sorted(rev_m.items())),
         "posts": len(posts), "posts_by_month": dict(sorted(post_m.items())),
         "posts_per_week_90d": round(len(last90) / (90 / 7), 1) if posts else None,
@@ -490,7 +501,8 @@ async def business_summary(report_data: dict, *, llm: dict | None, cache_path: P
         "reviews_by_page": [{k: p.get(k) for k in ("name", "reviews", "positive", "neutral", "negative", "top_positive",
                                                    "top_negative", "reply_rate", "negative_reply_rate",
                                                    "negative_unanswered", "template_share")} for p in ins.get("pages", [])],
-        "content_by_page": [{k: c.get(k) for k in ("name", "followers", "posts", "posts_per_week_90d", "last_post",
+        "content_by_page": [{k: c.get(k) for k in ("name", "posts_collected", "comments_collected", "ads_checked",
+                                                   "followers", "posts", "posts_per_week_90d", "last_post",
                                                    "by_type", "by_topic", "avg_engagement", "engagement_per_1k_followers",
                                                    "comments_read", "comment_intents", "questions_or_complaints",
                                                    "questions_answered", "ads_active")} for c in ins.get("content", [])],
@@ -502,6 +514,17 @@ async def business_summary(report_data: dict, *, llm: dict | None, cache_path: P
     if k in cache:
         return cache[k]
     out = await _llm_json(SUMMARY_SYSTEM, payload, llm)
+    for f in out.get("findings") or []:  # the big number is a number: "80% препоръки на X" → "80%" + label
+        m = re.match(r"^\s*([\d][\d.,\s]*%?)\s*(.*)$", str(f.get("metric") or ""))
+        if m and len(str(f.get("metric"))) > 8:
+            f["metric"], f["metric_label"] = m.group(1).strip(), (f.get("metric_label") or m.group(2)).strip()
+        elif f.get("metric") and not re.search(r"\d", str(f["metric"])):
+            f["metric"] = None
+    if out.get("findings") and not out.get("actions"):  # the model sometimes leaves them out: ask for them alone
+        more = await _llm_json(
+            SUMMARY_SYSTEM + "\nNow return ONLY {\"actions\": [...]} (2-5), each following from one of the findings given.",
+            {"data": payload, "findings": out["findings"]}, llm)
+        out["actions"] = more.get("actions") or []
     if out.get("findings"):
         cache = {k: out}
         if cache_path:

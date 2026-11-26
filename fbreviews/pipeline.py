@@ -124,6 +124,7 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
                                       recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or ""),
                                       is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", "")),
+                                      posts_collected=(ws / "posts" / f"{fburl_slug(loc.get('url', ''))}.json").exists(),
                                       ads=[Ad(**{k: v for k, v in a.items() if k in Ad.model_fields})
                                            for a in d.get("ads") or [] if isinstance(a, dict)]))
         except Exception as e:
@@ -268,6 +269,8 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
 async def _content_rounds(run_dir, brand, s, llm, browser, ws, config, country, progress) -> None:
     """Phase 3 / 4 after every location's reviews: the posts of each saved Page, then the comments under them.
     Separate agent rounds with their own short task, so a long content phase never delays the reviews."""
+    from .agents import run_agent
+
     idle = 0
     for k in range(1, s.max_rounds + 1):
         before = progress_of(run_dir)

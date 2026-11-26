@@ -519,3 +519,32 @@ def test_load_posts_and_content_insights(tmp_path):
     assert brand[0].posts[0].comments_list[0].intent == "question"
     c = build_insights(brand, [], "")["content"][0]
     assert c["posts"] == 2 and c["followers"] == 2000 and c["questions_or_complaints"] == 1 and c["questions_answered"] == 1
+
+
+def test_content_rounds_start_the_agent(tmp_path, monkeypatch):
+    """Regression: the content phase must really call the agent (it once failed with NameError: run_agent)."""
+    import asyncio as aio
+
+    import fbreviews.agents as agents
+    import fbreviews.pipeline as pl
+    run_dir = tmp_path / "chain_20261126-100000"
+    ws = run_dir / "workspace"
+    (ws / "brand").mkdir(parents=True)
+    (ws / "brand" / "chainpage.json").write_text(json.dumps(
+        {"location": {"name": "Chain", "url": "https://www.facebook.com/chainpage"}, "status": "ok", "reviews": []}))
+    calls = []
+
+    async def fake_agent(*a, **k):
+        calls.append(k.get("phase"))
+        (ws / "posts").mkdir(exist_ok=True)
+        (ws / "posts" / "chainpage.json").write_text(json.dumps({"posts": []}))
+
+    async def no_finalize(*a, **k):
+        return None
+    monkeypatch.setattr(agents, "run_agent", fake_agent)
+    monkeypatch.setattr(pl, "finalize", no_finalize)
+
+    class S:
+        max_rounds = 3
+    aio.run(pl._content_rounds(run_dir, "Chain", S(), None, None, ws, {}, None, lambda *_: None))
+    assert calls == ["content"] and pl.progress_of(run_dir)["posts_todo"] == 0

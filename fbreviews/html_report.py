@@ -78,6 +78,24 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 .sig{border-left:4px solid var(--warn);padding:10px 14px}.sig.high{border-left-color:var(--neg)}.sig b{display:block}
 .tone{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);margin:8px 0}.tone i{display:block;height:100%}
 .summ{color:var(--muted);font-size:12.5px;font-style:italic;margin-top:4px}
+.bizhead{font-size:17px;font-weight:620;line-height:1.45;border-left:4px solid var(--accent)}
+.score{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:12px}
+.tile{padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.tile .v{font-size:26px;font-weight:700;letter-spacing:-.02em}.tile .l{font-size:12px;color:var(--muted)}
+.tile.good{background:color-mix(in srgb,var(--pos) 10%,var(--card));border-color:color-mix(in srgb,var(--pos) 35%,var(--line))}.tile.good .v{color:var(--pos)}
+.tile.bad{background:color-mix(in srgb,var(--neg) 10%,var(--card));border-color:color-mix(in srgb,var(--neg) 35%,var(--line))}.tile.bad .v{color:var(--neg)}
+.tile.mid .v{color:var(--warn)}
+.bizcols{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));margin-top:14px;align-items:start}
+.bizcol h3{display:flex;align-items:center;gap:8px}.bizcol h3 i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.fcard{display:flex;gap:12px;padding:12px 14px}.fcard+.fcard{margin-top:10px}
+.fcard .m{flex:none;width:92px;text-align:center}.fcard .m b{display:block;font-size:22px;letter-spacing:-.02em}.fcard .m span{font-size:11px;color:var(--muted);line-height:1.2;display:block}
+.fcard .t b{display:block;margin-bottom:2px}.fcard .t{font-size:13px}
+.acts{counter-reset:a;display:grid;gap:10px;margin-top:8px}
+.act{display:flex;gap:12px;align-items:flex-start;padding:12px 14px}.act:before{counter-increment:a;content:counter(a);flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
+.lcards{grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr))}
+.lcard{border-top:4px solid var(--line)}.lcard.good{border-top-color:var(--pos)}.lcard.mid{border-top-color:var(--warn)}.lcard.bad{border-top-color:var(--neg)}
+.lcard .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}.lcard .stats b{display:block;font-size:17px}.lcard .stats span{font-size:11px;color:var(--muted)}
+.note{color:var(--warn);font-size:12.5px}
 #loctable td:first-child{min-width:230px}
 /* overview */
 .ov{grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr))}
@@ -110,10 +128,12 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 
 <main class="wrap" id="brandview">
   <div class="hero" id="sec-top"><h1 id="title"></h1><div class="sub" id="subtitle"></div><div class="chips" id="chips"></div></div>
-  <section id="sec-biz" hidden><h2>Какво казват данните за бизнеса <small>изводи от модела, само от числата отдолу</small></h2>
-    <div class="card" id="bizHead" style="font-size:16px;font-weight:600"></div>
-    <div class="grid two" id="bizFind" style="margin-top:12px"></div>
-    <div class="card" id="bizAct" style="margin-top:12px"></div>
+  <section id="sec-biz" hidden><h2>Какво казват данните за бизнеса <small>тълкуването е от модела; числата и цветовете — от данните</small></h2>
+    <div class="card bizhead" id="bizHead"></div>
+    <div class="grid score" id="bizScore"></div>
+    <div class="bizcols" id="bizFind"></div>
+    <div id="bizAct" style="margin-top:16px"></div>
+    <div class="note" id="bizNote" style="margin-top:8px"></div>
   </section>
   <div class="grid kpis" id="kpis"></div>
 
@@ -124,6 +144,9 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
   </section>
 
   <section id="sec-brand"><h2>Страници на бранда</h2><div class="grid two" id="brands"></div></section>
+
+  <section id="sec-lcards"><h2>Локациите накратко <small>цветът горе: зелено ≥ 85% препоръка, жълто 70–84%, червено под 70%</small></h2>
+    <div class="grid lcards" id="lcards"></div></section>
 
   <section id="sec-locs"><h2>Локации — сравнение <small id="locHint"></small></h2>
     <div class="card tablewrap"><table id="loctable"></table></div></section>
@@ -466,14 +489,55 @@ hbars($('chartPct'),
     <td class="n">${p.negative_unanswered ? `<span class="pill neg">${p.negative_unanswered}</span>` : '0'}</td><td class="n">${v(p.template_share)}</td>
     <td class="n">${p.reply_delay_days == null ? '—' : `~${p.reply_delay_days}<span class="small"> (${p.reply_delay_measured})</span>`}</td></tr>`).join('')}</tbody>`;
 })();
-// business summary (model) — the conclusion first, the evidence below
+// business summary — the conclusion first, the evidence below. Words from the model; numbers and colours from data.
 (function biz() {
   const B = (D.insights || {}).business || {};
-  $('sec-biz').hidden = $('navBiz').hidden = !(B.findings || []).length;
-  if (!(B.findings || []).length) return;
+  const has = (B.findings || []).length;
+  $('sec-biz').hidden = $('navBiz').hidden = !has;
+  if (!has) return;
   $('bizHead').textContent = B.headline || '';
-  $('bizFind').innerHTML = B.findings.map(f => `<div class="card sig ${f.tone === 'bad' ? 'high' : ''}" style="${f.tone === 'good' ? 'border-left-color:var(--pos)' : f.tone === 'neutral' ? 'border-left-color:var(--muted)' : ''}"><b>${esc(f.title)}</b>${esc(f.text)}</div>`).join('');
-  $('bizAct').innerHTML = (B.actions || []).length ? '<h3>Какво да се направи</h3><ol style="margin:0;padding-left:20px">' + B.actions.map(a => `<li>${esc(a)}</li>`).join('') + '</ol>' : '';
+  // scorecard straight from the data (filtered by country like everything else)
+  const P = ((D.insights || {}).pages || []).filter(p => { const pg = pages.find(x => x.location.url === p.url); return !pg || inC(pg); });
+  const C = ((D.insights || {}).content || []).filter(c => { const pg = pages.find(x => x.location.url === c.url); return !pg || inC(pg); });
+  const sum = (a, k) => a.reduce((s, x) => s + (x[k] || 0), 0);
+  const rec = reviews.filter(r => r.recommends === true).length, nrec = reviews.filter(r => r.recommends === false).length;
+  const negs = sum(P, 'negative'), unans = sum(P, 'negative_unanswered'), replied = reviews.filter(r => r._pageReplies.length).length;
+  const share = pct(rec, rec + nrec), negRep = negs ? Math.round(100 * (negs - unans) / negs) : null;
+  const postsC = C.filter(c => c.posts_collected), wk = postsC.map(c => c.posts_per_week_90d).filter(v => v != null);
+  const adsC = C.filter(c => c.ads_checked);
+  const lvl = (v, good, bad, hi = true) => v == null ? '' : (hi ? (v >= good ? 'good' : v < bad ? 'bad' : 'mid') : (v <= good ? 'good' : v > bad ? 'bad' : 'mid'));
+  const tiles = [
+    [share == null ? '—' : share + '%', 'препоръчват (извлечените ревюта)', lvl(share, 85, 70)],
+    [reviews.length ? pct(replied, reviews.length) + '%' : '—', 'от ревютата имат отговор от страницата', lvl(reviews.length ? pct(replied, reviews.length) : null, 50, 20)],
+    [negRep == null ? '—' : negRep + '%', 'от негативните имат отговор', lvl(negRep, 70, 30)],
+    [fmt(unans), 'негативни ревюта без отговор', lvl(unans, 0, 4, false)],
+    ...(postsC.length ? [[wk.length ? Math.round(wk.reduce((a, b) => a + b, 0) * 10) / 10 : '—', 'поста на седмица (последните 90 дни)', '']] : []),
+    ...(adsC.length ? [[fmt(adsC.reduce((a, c) => a + (c.ads_active || 0), 0)), 'активни реклами', '']] : []),
+  ];
+  $('bizScore').innerHTML = tiles.map(([v, l, c]) => `<div class="tile ${c}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  const col = (tone, title, color) => { const fs = B.findings.filter(f => (f.tone || 'neutral') === tone); return fs.length ? `<div class="bizcol"><h3><i style="background:var(${color})"></i>${title}</h3>${fs.map(f =>
+    `<div class="card fcard">${f.metric ? `<div class="m"><b style="color:var(${color})">${esc(f.metric)}</b><span>${esc(f.metric_label || '')}</span></div>` : ''}<div class="t"><b>${esc(f.title)}</b>${esc(f.text)}</div></div>`).join('')}</div>` : ''; };
+  $('bizFind').innerHTML = col('good', 'Добро', '--pos') + col('bad', 'Проблеми', '--neg') + col('neutral', 'За сведение', '--muted');
+  const acts = (B.actions || []).map(a => typeof a === 'string' ? {text: a} : a);
+  $('bizAct').innerHTML = acts.length ? '<h3>Какво да се направи</h3><div class="acts">' + acts.map(a => `<div class="card act"><div>${a.priority === 'high' ? '<span class="pill neg">спешно</span>' : a.priority ? '<span class="pill">после</span>' : ''}<div style="margin-top:4px">${esc(a.text)}</div>${a.because ? `<div class="small">защото: ${esc(a.because)}</div>` : ''}</div></div>`).join('') + '</div>' : '';
+  const missing = C.filter(c => !c.posts_collected).map(c => c.name);
+  $('bizNote').textContent = missing.length && C.length ? `Постовете не са извлечени за: ${missing.join(', ')} — за тях няма изводи за публикуването.` : '';
+})();
+// every location at a glance: colour by Facebook's % recommend, the numbers that matter, praise vs complaints
+(function lcards() {
+  const P = {}; ((D.insights || {}).pages || []).forEach(p => P[p.url] = p);
+  const L = pages.filter(p => inC(p) && p.status !== 'no_own_page');
+  $('sec-lcards').hidden = L.length < 2;
+  $('lcards').innerHTML = L.map(p => { const I = P[p.location.url] || {}, rp = p.recommend_pct;
+    const cls = rp == null ? '' : rp >= 85 ? 'good' : rp >= 70 ? 'mid' : 'bad';
+    const tops = (ks, d, c) => (ks || []).slice(0, 2).map(k => `<span class="pill ${c}">${esc(tl(k))} ${d[k]}</span>`).join('') || '<span class="small">—</span>';
+    return `<div class="card lcard ${cls}"><div style="display:flex;gap:10px;align-items:center;justify-content:space-between">
+      <div style="min-width:0"><b>${p._brand ? '[Бранд] ' : ''}${esc(p.location.name)}</b><div class="small">${esc([p.location.city, countryOf(p)].filter(Boolean).join(' · '))}</div></div>
+      ${rp != null ? `<div class="ring" style="--p:${rp}" title="% препоръка във Facebook"><span>${rp}%</span></div>` : `<span class="pill">${STATUS[p.status] || esc(p.status)}</span>`}</div>
+      <div class="stats"><div><b>${fmt(p.review_total)}</b><span>ревюта във FB</span></div><div><b>${I.reviews ? pct(I.negative, I.reviews) + '%' : '—'}</b><span>негативни</span></div>
+        <div><b>${I.negative_reply_rate == null ? '—' : I.negative_reply_rate + '%'}</b><span>отговорени негативни</span></div></div>
+      <div class="small">Хвалят:</div><div>${tops(I.top_positive, I.topics_positive || {}, 'pos')}</div>
+      <div class="small" style="margin-top:4px">Оплакват се от:</div><div>${tops(I.top_negative, I.topics_negative || {}, 'neg')}</div></div>`; }).join('');
 })();
 // how often reviews come and what they are like
 function monthBars(el, months, series, data) {

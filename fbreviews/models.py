@@ -148,6 +148,7 @@ class LocationResult(BaseModel):
     notes: str = ""
     is_brand: bool = False  # the brand's own Page (global / country), reported apart from the locations
     posts: list[Post] = Field(default_factory=list)
+    posts_collected: bool = False  # False = the posts were not collected (not the same as a Page with 0 posts)
     ads: list[Ad] = Field(default_factory=list)
     scraped_at: str = Field(default_factory=now_iso)
 

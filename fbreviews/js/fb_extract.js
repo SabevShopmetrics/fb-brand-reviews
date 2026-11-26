@@ -876,7 +876,7 @@ window.__fbx = (function () {
         var sh = a.length < n.length ? a : n, lg = a.length < n.length ? n : a; return sh.length >= 8 && lg.indexOf(sh + ' ') === 0 && lg.length - sh.length <= 12; })();
       var lines = txt(a).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
       var body = lines.filter(function (l, i) {
-        return !(i === 0 && l === author) && l !== '·' && !/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|отговор|харесване|reply|like|редактирано|edited|автор|author|най-активен фен|top fan|\d+)$/i.test(l) && !/^·?\s*\d+\s*(мин|ч|д|сед|г)/.test(l);
+        return !(i === 0 && l === author) && l !== '·' && !/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|отговор|харесване|reply|like|редактирано|edited|автор|author|най-активен фен|топ фен|top fan|нов участник|new member|\d+)$/i.test(l) && !/^·?\s*\d+\s*(мин|ч|д|сед|г)/.test(l);
       });
       var text = body.join('\n').replace(/(харесване|отговор|like|reply)+$/i, '').trim();
       var k = author + '|' + when + '|' + text.slice(0, 80);

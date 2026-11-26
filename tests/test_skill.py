@@ -617,13 +617,13 @@ def test_page_replies_in_comments_are_recognised(tmp_path):
             {"author": "Иван Иванов", "text": "Работите ли в неделя?", "depth": 1, "is_page_reply": False},
             {"author": "Raffy Bar & Gelato на коментара на Иван Иванов", "text": "Да, до 22 ч.", "depth": 1,
              "is_page_reply": False},
-            {"author": "Иван Иванов на отговора на Raffy Bar & Gelato", "text": "Благодаря", "depth": 1,
+            {"author": "Иван Иванов на отговора на Raffy Bar & Gelato", "text": "Топ фен Благодаря", "depth": 1,
              "is_page_reply": False}]}]}, ensure_ascii=False))
     posts = load_posts(ws, "https://www.facebook.com/raffy", "Raffy Bar & Gelato")
     cl = posts[0].comments_list
     assert [c.author for c in cl] == ["Иван Иванов", "Raffy Bar & Gelato", "Иван Иванов"]
     assert [c.is_page_reply for c in cl] == [False, True, False] and cl[1].reply_to == "Иван Иванов"
-    assert [c.depth for c in cl] == [1, 2, 2]
+    assert [c.depth for c in cl] == [1, 2, 2] and cl[2].text == "Благодаря"
     cl[0].intent = "question"
     res = LocationResult(location=LocationPage(name="Raffy Bar & Gelato", url="https://www.facebook.com/raffy"),
                          status="ok", posts=posts, posts_collected=True)

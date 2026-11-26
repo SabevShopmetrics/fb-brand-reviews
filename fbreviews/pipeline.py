@@ -169,6 +169,9 @@ def clean_comment(c: dict, names) -> dict:
         c["author"] = str(c["author"])[:m.start()].strip()
         c["depth"] = 2
     c["is_page_reply"] = bool(c.get("is_page_reply")) or same_page(c.get("author"), names)
+    # badges Facebook puts before the text ("Топ фен", "Top fan") are not the comment
+    c["text"] = re.sub(r"^(?:(?:топ фен|най-активен фен|top fan|нов участник|new member)\s*)+", "", str(c.get("text") or ""),
+                       flags=re.I).strip()
     return c
 
 

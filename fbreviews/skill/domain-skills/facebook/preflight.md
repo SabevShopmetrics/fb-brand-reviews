@@ -41,7 +41,7 @@ replies beyond the preview are not a defect.
 |---|---|
 | `schema` | a review lacks a contract key or has the wrong type |
 | `found_reviews` | the page says "(N отзива / reviews)" with N > 0, but 0 reviews were read |
-| `coverage` | reviews read < 80% of min(page total, max_reviews) (60% during the run), and more than 2 missing |
+| `coverage` | reviews read < 80% of min(page total, max_reviews) (60% during the run), and more than 2 missing. Not a failure when the list itself ended (`list_end` warning, ≥ 30 read): Facebook counts old ratings it does not list — keep the result as partial, do not repair |
 | `over_total` | more reviews read than the page total × 1.2 (non-review units parsed, duplicates) |
 | `empty_text` | > 30% of reviews have no text |
 | `null_verdict` | > 20% have `recommends` null |

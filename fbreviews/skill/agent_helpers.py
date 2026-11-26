@@ -760,7 +760,13 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
             cov = round(n / expect, 3) if expect else 1.0
             stats["coverage"] = cov
             need = HEALTH["coverage_min"] if mode == "preflight" else HEALTH["coverage_min_run"]
-            if cov < need and expect - n > 2:  # a tiny page (3 of 4): Facebook counts ratings it does not show
+            list_end = diag.get("scroll_reason") == "no_more" and n >= 30
+            if cov < need and expect - n > 2 and list_end:
+                # the list itself stopped loading after a long wait with a healthy sample: Facebook's count includes
+                # old ratings it no longer lists. Keep what was read (partial), do not "repair" the extractor.
+                warnings.append(f"list_end: Facebook stopped listing at {n} of {expect} reviews (its count includes "
+                                "old ratings it does not show) — saved as partial")
+            elif cov < need and expect - n > 2:  # a tiny page (3 of 4): Facebook counts ratings it does not show
                 fail("coverage", f"read {n} of {expect} reviews ({cov:.0%} < {need:.0%}): units/scrolling/accumulation")
             if n > total * HEALTH["over_total_factor"] + 2:
                 fail("over_total", f"read {n} but the page says {total}: non-review units or duplicates are parsed")

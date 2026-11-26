@@ -567,3 +567,25 @@ def test_unfinished_run_is_found(tmp_path):
     (d / "workspace" / "posts" / "d1.json").write_text(json.dumps({"posts": [{"permalink": "p", "comments": 0}]}))
     assert unfinished_run(tmp_path, "Дивака") is None         # everything collected
     assert unfinished_run(tmp_path, "Raffy") is None
+
+
+def test_posts_survive_slow_steps(tmp_path, monkeypatch):
+    """Regression: a scrollPosts call that times out must not reach the agent; what was read is saved."""
+    m, _ = load_helpers(tmp_path)
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    m.fb_open = lambda url: {"ok": True, "state": "ok"}
+    calls = {"n": 0}
+
+    def run(expr):
+        if "scrollPosts" in expr:
+            calls["n"] += 1
+            if calls["n"] <= 6:
+                return {"count": calls["n"] * 10, "done": False}
+            raise RuntimeError("Runtime.evaluate timed out")
+        if "collectedPosts" in expr:
+            return [{"permalink": f"p{i}", "comments": 0} for i in range(50)]
+        return None
+    m._run = run
+    r = m.fb_extract_posts("https://www.facebook.com/bigpage", name="Big")
+    assert r["status"] == "ok" and r["posts"] == 50
+    assert len(m._read("posts/bigpage.json", {})["posts"]) == 50

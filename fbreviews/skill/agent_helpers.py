@@ -1248,6 +1248,14 @@ def _comments_todo():
     return n
 
 
+def _safe_posts():
+    try:
+        got = _run("__fbx.collectedPosts()")
+    except Exception:
+        return []
+    return got if isinstance(got, list) else []
+
+
 def fb_extract_posts(url, name=None):
     """Phase 3. All posts of one Page (its timeline): date, text, type (photo / album / video / reel / link / text),
     photos, reactions, comments, shares, views, permalink → posts/<slug>.json. Paced like everything else; returns
@@ -1257,20 +1265,34 @@ def fb_extract_posts(url, name=None):
     r = fb_open(page)
     if not isinstance(r, dict) or not r.get("ok"):
         return {"status": (r or {}).get("state", "unknown"), "posts": 0}
-    opts = {"steps": 6, "delayMs": 1100, "maxPosts": MAX_POSTS, "since": POSTS_SINCE}
-    deadline, last, st = time.time() + SCROLL_MAX_S, -1, {}
+    opts = {"steps": 6, "delayMs": 1100, "maxPosts": MAX_POSTS, "since": POSTS_SINCE, "budgetMs": 12000}
+    deadline, last, st, errors, posts, k = time.time() + SCROLL_MAX_S, -1, {}, 0, [], 0
     while time.time() < deadline:
-        st = _run("__fbx.scrollPosts(" + json.dumps(opts) + ")")
+        try:
+            st = _run("__fbx.scrollPosts(" + json.dumps(opts) + ")")
+            errors = 0
+        except Exception as e:  # a slow step or a hiccup: keep what is collected, retry, never hand the error up
+            errors += 1
+            _say(f"  бавна стъпка при постовете ({str(e)[:80]}) — опитвам пак ({errors}/3)")
+            if errors >= 3:
+                st = {"reason": "errors"}
+                break
+            time.sleep(3)
+            continue
         if not isinstance(st, dict):
             st = {}
             break
+        k += 1
         if st.get("count") != last:
             last = st.get("count")
             _say(f"  вадя постове: {last}")
+        if k % 5 == 0:  # keep a snapshot: a later failure never loses what was already read
+            got = _safe_posts()
+            posts = got if len(got) >= len(posts) else posts
         if st.get("done"):
             break
-    posts = _run("__fbx.collectedPosts()") or []
-    posts = posts if isinstance(posts, list) else []
+    got = _safe_posts()
+    posts = got if len(got) >= len(posts) else posts
     pid = None
     try:
         pid = _run("__fbx.pageId()")

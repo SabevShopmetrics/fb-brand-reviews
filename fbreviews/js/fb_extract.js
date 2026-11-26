@@ -758,9 +758,26 @@ window.__fbx = (function () {
     return id || ((p.date_full || '') + '|' + (p.text || '').slice(0, 40));
   }
 
-  function accumulatePosts() {
+  // only posts near the viewport: re-parsing hundreds of passed posts on every step made one call exceed the
+  // ~25 s evaluate limit on big Pages
+  function nearView(A) { var r = A.getBoundingClientRect(); return r.bottom > -2 * innerHeight && r.top < 3 * innerHeight; }
+
+  function expandVisiblePosts() {
+    var n = 0;
+    pagePostEls().forEach(function (A) {
+      if (!nearView(A)) return;
+      Array.prototype.forEach.call(A.querySelectorAll('div[role="button"], span[role="button"]'), function (b) {
+        var t = txt(b);
+        if (t && t.length < 30 && /^(вижте повече|see more)$/i.test(t)) { try { b.click(); n++; } catch (e) {} }
+      });
+    });
+    return n;
+  }
+
+  function accumulatePosts(all) {
     var acc = window.__fbxPosts || (window.__fbxPosts = { order: [], map: {} });
     pagePostEls().forEach(function (A) {
+      if (!all && !nearView(A)) return;
       var p; try { p = parsePagePost(A); } catch (e) { return; }
       if (!p || (!p.text && !p.permalink && !p.date_full)) return;
       var k = postKey(p), old = acc.map[k];
@@ -776,10 +793,11 @@ window.__fbx = (function () {
   async function scrollPosts(opts) {
     opts = opts || {};
     var steps = opts.steps || 8, delay = opts.delayMs || 1100, max = opts.maxPosts || 100000;
+    var budget = opts.budgetMs || 12000, t0 = Date.now();   // always return well inside the evaluate limit
     var st = window.__fbxPostState || (window.__fbxPostState = { last: 0, stable: 0, lastNewAt: Date.now() });
     var reason = null, acc;
-    for (var i = 0; i < steps; i++) {
-      if (F.clickExpanders()) await sleep(600);
+    for (var i = 0; i < steps && Date.now() - t0 < budget; i++) {
+      if (expandVisiblePosts()) await sleep(600);
       acc = accumulatePosts();
       var els = pagePostEls(), lastEl = els[els.length - 1];
       if (lastEl) lastEl.scrollIntoView({ block: 'center' });
@@ -802,7 +820,7 @@ window.__fbx = (function () {
     return { count: acc.order.length, done: !!reason, reason: reason, stable: st.stable };
   }
 
-  function collectedPosts() { var acc = accumulatePosts(); return acc.order.map(function (k) { return acc.map[k]; }); }
+  function collectedPosts() { var acc = window.__fbxPosts || accumulatePosts(); return acc.order.map(function (k) { return acc.map[k]; }); }
 
   function dateIso(s) {
     var m = String(s || '').toLowerCase().match(new RegExp('(\\d{1,2})\\s+' + MONTH_RX + '\\s*,?\\s*(\\d{4})?'));

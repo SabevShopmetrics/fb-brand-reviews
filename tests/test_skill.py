@@ -175,6 +175,7 @@ def test_check_reviews_thresholds(tmp_path):
     h = m.fb_check_reviews(good[:5], {"review_total": 40})
     assert h["failed"] == ["coverage"]
     assert m.fb_check_reviews(good[:5], {"review_total": 40}, max_reviews=5)["healthy"] is True
+    assert "coverage" not in m.fb_check_reviews(good[:3], {"review_total": 4})["failed"]   # 3 of 4: a tiny page
     assert "over_total" in m.fb_check_reviews(good, {"review_total": 3})["failed"]
     h = m.fb_check_reviews([_review(1, recommends="yes", comment_count="2")], {"review_total": 1})
     assert h["failed"] == ["schema"] and "recommends" in h["details"]["schema"]

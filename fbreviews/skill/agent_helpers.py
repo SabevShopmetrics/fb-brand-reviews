@@ -195,37 +195,65 @@ def _override_src():
         return ""
 
 
-def _bundle(expression, override=None):
-    """The bundled extractor, then the workspace override (if any), then `expression`. The override runs inside
-    try/catch (a runtime error is reported as __fbx.overrideError) and can never replace pageState()."""
+_CHUNK = 20000  # characters per request: browser-harness takes at most 64 KiB per Runtime.evaluate
+
+
+def _bundle_src(override=None):
+    """The bundled extractor, then the workspace override (if any). The override runs inside try/catch (a runtime
+    error is reported as __fbx.overrideError) and can never replace pageState() (window.__fbxBasePageState keeps
+    the bundled one for the safety check)."""
     src = _override_src() if override is None else override
-    if not src.strip():
-        return _JS + "\n" + expression
-    return "\n".join([
-        _JS,
-        "var __fbxSafePageState = window.__fbx.pageState;",
-        "try {", src, "} catch (e) { window.__fbx.overrideError = String((e && e.stack) || e); }",
-        "window.__fbx.pageState = __fbxSafePageState;",
-        expression,
-    ])
+    parts = [_JS, "window.__fbxBasePageState = window.__fbx.pageState;"]
+    if src.strip():
+        parts += ["var __fbxSafePageState = window.__fbx.pageState;",
+                  "try {", src, "} catch (e) { window.__fbx.overrideError = String((e && e.stack) || e); }",
+                  "window.__fbx.pageState = __fbxSafePageState;"]
+    return "\n".join(parts)
+
+
+def _bundle(expression, override=None):
+    """Extractor + override + expression as ONE script (only for writing the bundle to a file / syntax checks;
+    pages get it in pieces through _inject, since the whole is larger than one request may be)."""
+    return _bundle_src(override) + "\n" + expression
+
+
+def _inject(h, override=None):
+    """Load the extractor (+ override) into the current page once: sent in pieces of _CHUNK characters, joined in
+    the page and evaluated there. Nothing is sent when the page already has this exact version (a navigation
+    clears it, so every new page gets it again)."""
+    src = _bundle_src(override)
+    sig = hashlib.sha1(src.encode()).hexdigest()[:12]
+    try:
+        if h.js(f"!!(window.__fbx && window.__fbx.__sig === {json.dumps(sig)})") is True:
+            return
+    except Exception:
+        pass
+    h.js("window.__fbxSrc = []; true")
+    for k in range(0, len(src), _CHUNK):
+        h.js("window.__fbxSrc.push(" + json.dumps(src[k:k + _CHUNK], ensure_ascii=False) + "); true")
+    h.js("(function () { var s = window.__fbxSrc.join(''); window.__fbxSrc = null; (0, eval)(s); "
+         f"window.__fbx.__sig = {json.dumps(sig)}; return true; }})()")
+
+
+def _js(expression, override=None):
+    """Run `expression` against the injected extractor; inject first (and again if a navigation cleared it)."""
+    h = _h()
+    _inject(h, override)
+    return h.js(expression)
 
 
 def _run(expression):
-    """Evaluate the extractor (+ override) + expression in the page. If the override itself does not even parse,
+    """Evaluate expression with the extractor (+ override) in the page. If the override itself does not even parse,
     record that (override_status.json, shown by fb_override / fb_preflight) and fall back to the bundled extractor."""
-    h = _h()
     if not _override_src().strip() or _read("override_status.json", {}).get("sig") == _override_sig():
-        return h.js(_JS + "\n" + expression)  # no override, or one already known not to parse
+        return _js(expression, override="")  # no override, or one already known not to parse
     try:
-        return h.js(_bundle(expression))
-    except Exception as e:
-        try:
-            h.js(_bundle("true"))
-        except Exception as e2:  # the override is broken, not the expression
-            _write("override_status.json", {"error": f"{type(e2).__name__}: {e2}"[:2000], "sig": _override_sig(),
-                                            "at": datetime.now().isoformat(timespec="seconds")})
-            return h.js(_JS + "\n" + expression)
-        raise e
+        _inject(_h())
+    except Exception as e2:  # the override is broken, not the expression
+        _write("override_status.json", {"error": f"{type(e2).__name__}: {e2}"[:2000], "sig": _override_sig(),
+                                        "at": datetime.now().isoformat(timespec="seconds")})
+        return _js(expression, override="")
+    return _h().js(expression)
 
 
 def fb_open(url):
@@ -254,7 +282,11 @@ def fb_open(url):
     pace["pages"] += 1
     pace["last"] = time.time()
     _write("pace.json", pace)
-    state = h.js(_JS + "\n__fbx.pageState()") if _JS else {"state": "ok"}  # bundled check only, never overridden
+    if _JS:  # the bundled check only, never an override's
+        _inject(h, override="")
+        state = h.js("(window.__fbxBasePageState || window.__fbx.pageState)()")
+    else:
+        state = {"state": "ok"}
     if LITE and state.get("state") == "login_required" and "/login" not in (state.get("url") or ""):
         state = {**state, "state": "ok", "logged_out": True}
     if state.get("state") in ("login_required", "blocked"):
@@ -1009,7 +1041,7 @@ def fb_web_search(query, pages=1):
         if SEARCH_CHALLENGE.search(text):
             _say("  Bing поиска CAPTCHA — спирам търсенето там (не я решавам)")
             return {"error": "search_challenge", "engine": "bing", "query": query}
-        for r in h.js(_bundle("__fbx.webResults()")) or []:
+        for r in _js("__fbx.webResults()") or []:
             url = fb_page_url(r.get("url", ""))
             if url and url not in seen:
                 seen.add(url)
@@ -1068,14 +1100,14 @@ def fb_page_summary(url):
         return {"url": page, "state": r.get("state", "unknown"), "reason": r.get("reason")}
     s = {}
     for _ in range(10):  # the public view loads slowly: wait until the header data is there (≤ ~20 s)
-        s = _h().js(_bundle("__fbx.pageSummary()")) or {}
+        s = _js("__fbx.pageSummary()") or {}
         if s.get("name") and (s.get("recommend_pct") is not None or s.get("category")):
             break
         time.sleep(2)
     s["state"] = "ok"
     s["url"] = page
     try:
-        s["page_id"] = _h().js(_bundle("__fbx.pageId()"))
+        s["page_id"] = _js("__fbx.pageId()")
     except Exception:
         pass
     det = _page_details(page, s.get("page_id"))

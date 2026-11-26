@@ -93,19 +93,35 @@ class FakePage:
         self.search = search or []
         self.broken = broken  # a substring: js() raises if the source contains it (an override that does not parse)
         self.sources, self.urls = [], []
+        self.injected, self.sig, self._buf = [], None, []  # the extractor arrives in pieces, once per page
 
     def goto_url(self, url):
         self.urls.append(url)
+        self.sig = None  # a navigation clears the injected extractor
 
     def wait_for_load(self, timeout=20):
         return True
 
     def js(self, src):
         self.sources.append(src)
-        if self.broken and self.broken in src:
-            raise RuntimeError("SyntaxError: Unexpected token")
+        if src.startswith("!!(window.__fbx"):
+            return bool(self.sig) and self.sig in src
+        if src.startswith("window.__fbxSrc = []"):
+            self._buf = []
+            return True
+        if src.startswith("window.__fbxSrc.push("):
+            self._buf.append(json.loads(src[len("window.__fbxSrc.push("):-len("); true")]))
+            return True
+        if "(0, eval)(s)" in src:
+            code = "".join(self._buf)
+            if self.broken and self.broken in code:
+                raise RuntimeError("SyntaxError: Unexpected token")
+            self.injected.append(code)
+            self.sig = re.search(r'__sig = "(\w+)"', src).group(1)
+            return True
+        assert self.sig, "an __fbx call before the extractor was injected"
         tail = src.rsplit("\n", 1)[-1]
-        if "pageState()" in tail:
+        if "pageState" in tail:
             return {"state": "ok", "url": self.urls[-1] if self.urls else ""}
         if "__fbx.scroll(" in tail:
             return {"count": len(self.reviews), "done": True}
@@ -230,12 +246,13 @@ def test_override_is_saved_loaded_and_logged(fake):
     assert "units lost aria-posinset" in src and "__fbx.override" in src
 
     m.fb_js("__fbx.posts().length")
-    assert "div.unit-v9" in page.sources[-1]
-    assert page.sources[-1].index("div.unit-v9") < page.sources[-1].index("window.__fbx.pageState = __fbxSafePageState")
+    assert "div.unit-v9" in page.injected[-1]
+    assert page.injected[-1].index("div.unit-v9") < page.injected[-1].index("window.__fbx.pageState = __fbxSafePageState")
+    assert all(len(x) < 64 * 1024 for x in page.sources)  # every request fits browser-harness's limit
     m.fb_open("https://www.facebook.com/zaraa/reviews")
-    assert "div.unit-v9" not in page.sources[-1]  # login / checkpoint check: bundled extractor only
+    assert "div.unit-v9" not in page.injected[-1]  # login / checkpoint check: bundled extractor only
     m.fb_extract_reviews("https://www.facebook.com/zaraa", save=False)
-    assert all("div.unit-v9" in s for s in page.sources if "__fbx.extract(" in s.rsplit("\n", 1)[-1])
+    assert "div.unit-v9" in page.injected[-1]
 
     m.fb_add_locations([{"name": "Zara A", "url": "https://www.facebook.com/zaraa"}])
     assert m.fb_preflight()["healthy"] is True

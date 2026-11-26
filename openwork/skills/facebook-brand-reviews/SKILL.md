@@ -67,9 +67,11 @@ names one country, pass it as the 5th argument to limit the run: `scripts/run_bg
 When you report the result, give the per-country summary first.
 
 ## Before starting
-1. (Full mode only — reviews and replies.) The built-in browser must be logged in to Facebook. If there is none, open
-   `https://www.facebook.com/` in the built-in browser and ask the user to log in there. Never type credentials,
-   never log in for them.
+1. The tool drives a tab of OpenWork's built-in browser, but it cannot open one itself. If the built-in browser is
+   not open or has no tab, OPEN IT YOURSELF with your browser tool at `https://www.facebook.com/` — do not ask the
+   user. The browser keeps its Facebook login between sessions, so a user who logged in once is still logged in:
+   just start. Only if the page shows a login form (not a remembered-account screen the tool can pass), ask the user
+   to log in there; never type credentials, never log in for them. Then leave the tab alone: the tool navigates it.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill
    `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `TOOL_DIR/.env` (open it for them). Never print the key.
 3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING (see "Free-form requests").

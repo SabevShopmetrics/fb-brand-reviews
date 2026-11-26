@@ -734,7 +734,12 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
     rv_ok = [rv for rv in reviews if isinstance(rv, dict)]
 
     stats = {"reviews": n, "review_total": total, "tab_state": diag.get("tab_state"),
-             "empty_text": _share(sum(1 for r in rv_ok if not (r.get("text") or "").strip()), n),
+             # a review with a reviewer, a verdict and a date but no text is real (Facebook allowed text-less
+             # recommendations until ~2019); only units with none of that are broken / placeholder units
+             "empty_text": _share(sum(1 for r in rv_ok if not (r.get("text") or "").strip()
+                                      and not (r.get("reviewer") and r.get("recommends") is not None
+                                               and (r.get("date_text") or r.get("date_full")))), n),
+             "textless": _share(sum(1 for r in rv_ok if not (r.get("text") or "").strip()), n),
              "null_verdict": _share(sum(1 for r in rv_ok if r.get("recommends") is None), n),
              "missing_permalink": _share(sum(1 for r in rv_ok if not r.get("permalink")), n),
              "missing_reviewer": _share(sum(1 for r in rv_ok if not (r.get("reviewer") or "").strip()), n),
@@ -781,6 +786,8 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
             limit = 0.999 if small and key != "duplicates" else HEALTH[lim]
             if stats[key] > limit:
                 fail(key, f"{stats[key]:.0%} of reviews lack/break the {what} (limit {limit:.0%})")
+        if "empty_text" not in failed and n >= 5 and stats["textless"] > 0.8:   # old text-less recs are a part, never ~all
+            fail("empty_text", f"{stats['textless']:.0%} of reviews have no text: the text parsing broke (text blocks)")
         if stats["missing_date"] > HEALTH["missing_date_warn"]:
             warnings.append(f"{stats['missing_date']:.0%} of reviews have no date_text")
         if n >= HEALTH["comment_count_warn_sample"] and not stats["with_comment_count"]:

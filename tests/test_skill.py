@@ -176,6 +176,10 @@ def test_check_reviews_thresholds(tmp_path):
     assert h["failed"] == ["coverage"]
     assert m.fb_check_reviews(good[:5], {"review_total": 40}, max_reviews=5)["healthy"] is True
     assert "coverage" not in m.fb_check_reviews(good[:3], {"review_total": 4})["failed"]   # 3 of 4: a tiny page
+    old_recs = [_review(i) for i in range(10)] + [dict(_review(100 + i), text="") for i in range(10)]
+    assert "empty_text" not in m.fb_check_reviews(old_recs, {"review_total": 20})["failed"]   # text-less 2018 recs
+    assert "empty_text" in m.fb_check_reviews([dict(r, text="", reviewer=None) for r in old_recs],
+                                              {"review_total": 20})["failed"]
     many = [_review(i) for i in range(102)]
     assert m.fb_check_reviews(many, {"review_total": 304})["failed"] == ["coverage"]
     h = m.fb_check_reviews(many, {"review_total": 304, "scroll_reason": "no_more"}, mode="run")

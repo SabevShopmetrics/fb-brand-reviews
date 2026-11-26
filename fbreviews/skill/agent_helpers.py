@@ -365,18 +365,37 @@ def _search_note(st, key, results):
     _write("search_state.json", st)
 
 
+class _NoResults(list):
+    """An empty result list that also says why (r.error, r.message, r['error'])."""
+
+    def __init__(self, info):
+        super().__init__()
+        self.info = dict(info or {})
+        self.error, self.message = self.info.get("error"), self.info.get("message", "")
+
+    def __getitem__(self, k):
+        return self.info[k] if isinstance(k, str) else super().__getitem__(k)
+
+    def get(self, k, default=None):
+        return self.info.get(k, default)
+
+
 def fb_search_pages(query, kind="pages", scrolls=6):
     """Facebook search results for `query` (kind 'pages' or 'places'): [{name, url, snippet}].
     The snippet holds what Facebook shows under the name (category, address, followers, rating)."""
     from urllib.parse import quote
 
     st, key, cached = _search_gate(query, kind)
+    if isinstance(cached, dict):  # search closed: still a list (code that loops over results keeps working)
+        print(f"fb_search_pages: {cached.get('error')} — {cached.get('message', '')}")
+        return _NoResults(cached)
     if cached is not None:
         return cached
     _say(f"Търся във Facebook: „{query}“")
     r = fb_open(f"https://www.facebook.com/search/{kind}/?q={quote(query)}")
-    if not r.get("ok"):
-        return {"error": r}
+    if not isinstance(r, dict) or not r.get("ok"):
+        print(f"fb_search_pages: the search page did not open: {r}")
+        return _NoResults({"error": (r or {}).get("state", "unknown") if isinstance(r, dict) else "unknown", "state": r})
     h = _h()
     seen = {}
     for _ in range(scrolls):

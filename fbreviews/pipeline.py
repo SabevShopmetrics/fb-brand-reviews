@@ -499,8 +499,12 @@ async def run(
         idle_rounds = 0
         for round_no in range(len(meta["rounds"]) + 1, len(meta["rounds"]) + 1 + s.max_rounds):
             before = progress_of(run_dir)
-            if resume and before["locations"] and before["done"] >= before["locations"] and not before["stopped"]:
-                progress(f"Всички {before['locations']} локации вече са готови — минавам направо към съдържанието.")
+            searched = before["locations"] or before["done"] or any(r.get("after_done") for r in meta["rounds"]
+                                                                    if isinstance(r, dict))
+            if resume and searched and before["done"] >= before["locations"] and not before["stopped"]:
+                # (0 location Pages but the brand Page / stores saved earlier = the search already concluded)
+                progress(f"Всички {before['locations'] or before['done']} страници вече са готови — минавам направо "
+                         "към съдържанието.")
                 break
             progress(f"Рунд {round_no}: агентът работи… (локации {before['locations']}, готови {before['done']})")
             tail_stop = asyncio.Event()

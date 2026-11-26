@@ -423,7 +423,7 @@ def test_search_cache_and_close(tmp_path):
     m.fb_search_pages("Дивака Бургас", scrolls=1)
     m.fb_add_locations([])                           # third search added nothing -> closed
     r = m.fb_search_pages("Дивака Русе", scrolls=1)
-    assert isinstance(r, dict) and r["error"] == "search_closed" and len(loads) == 3
+    assert r == [] and r.error == "search_closed" and r["error"] == "search_closed" and len(loads) == 3
 
 
 def test_search_closes_when_no_location_found(tmp_path):
@@ -438,7 +438,7 @@ def test_search_closes_when_no_location_found(tmp_path):
     for i in range(6):                                # 6 searches, never a location
         assert isinstance(m.fb_search_pages(f"Щастливеца {i}", scrolls=1), list)
     r = m.fb_search_pages("Щастливеца Румъния", scrolls=1)
-    assert isinstance(r, dict) and r["error"] == "search_closed" and "brand_todo" in r["message"] and len(loads) == 6
+    assert r == [] and [x for x in r] == [] and r["error"] == "search_closed" and "brand_todo" in r.message and len(loads) == 6
 
 
 def test_store_without_own_page_and_cache_limit(tmp_path):

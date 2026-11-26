@@ -103,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     fn.add_argument("--brand")
     fn.add_argument("--no-llm-classifier", action="store_true")
 
+    rt = sub.add_parser("resume-target", help="недовършено скорошно пускане за бранда (папка) или нищо")
+    rt.add_argument("brand")
+    rt.add_argument("--out", type=Path, default=Path("output"))
+
     lt = sub.add_parser("latest", help="последното пускане с данни за бранд (или всички): папка, отчет, дата")
     lt.add_argument("brand", nargs="?")
     lt.add_argument("--out", type=Path, default=Path("output"))
@@ -117,6 +121,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "check":
         return cmd_check(s)
+
+    if a.cmd == "resume-target":
+        from .pipeline import unfinished_run
+
+        d = unfinished_run(a.out, a.brand)
+        if d:
+            print(d)
+        return 0 if d else 3
 
     if a.cmd == "latest":
         from .fburl import slug as _slug

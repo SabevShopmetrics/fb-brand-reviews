@@ -548,3 +548,22 @@ def test_content_rounds_start_the_agent(tmp_path, monkeypatch):
         max_rounds = 3
     aio.run(pl._content_rounds(run_dir, "Chain", S(), None, None, ws, {}, None, lambda *_: None))
     assert calls == ["content"] and pl.progress_of(run_dir)["posts_todo"] == 0
+
+
+def test_unfinished_run_is_found(tmp_path):
+    from fbreviews.pipeline import unfinished_run
+    d = tmp_path / "divaka_20261126-150309"
+    (d / "workspace" / "results").mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"rounds": [{}], "brand": "Дивака"}))
+    (d / "workspace" / "locations.json").write_text(json.dumps([{"url": "https://www.facebook.com/d1"}]))
+    (d / "workspace" / "results" / "d1.json").write_text(json.dumps(
+        {"location": {"name": "D1", "url": "https://www.facebook.com/d1"}, "status": "ok", "reviews": []}))
+    (d / "report.json").write_text("{}")
+    assert unfinished_run(tmp_path, "Дивака") == d            # reviews done, posts missing → finish it
+    (d / "meta.json").write_text(json.dumps({"rounds": [{}], "brand": "Дивака", "posts": False}))
+    assert unfinished_run(tmp_path, "Дивака") is None         # a run without posts is complete
+    (d / "meta.json").write_text(json.dumps({"rounds": [{}], "brand": "Дивака"}))
+    (d / "workspace" / "posts").mkdir()
+    (d / "workspace" / "posts" / "d1.json").write_text(json.dumps({"posts": [{"permalink": "p", "comments": 0}]}))
+    assert unfinished_run(tmp_path, "Дивака") is None         # everything collected
+    assert unfinished_run(tmp_path, "Raffy") is None

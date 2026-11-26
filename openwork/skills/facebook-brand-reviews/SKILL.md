@@ -14,7 +14,9 @@ Tool folder (TOOL_DIR): `__TOOL_DIR__`
 ## Free-form requests — the user writes whatever they want
 The user writes in their own words (Bulgarian or English, any length). Work out what they want and do it; ask a
 question only when the brand is missing or the request is truly ambiguous. A brand name alone ("Дивака", "Zara")
-means: start the full run now with every default and follow it to the end.
+means: start the full run now with every default and follow it to the end. ONE message is always enough: never ask
+the user to write "продължи" — `run_bg.sh "<brand>"` finishes an unfinished recent run of that brand by itself
+(it prints `RESUMING <folder>`: say "довършвам започнатото на <date>") and starts a new one otherwise.
 
 **Defaults** (never add limits on your own): all locations, all reviews with the Page's replies, the brand's own
 Pages, every Page's posts and the comments under them, active ads, the whole world, then the business conclusions.
@@ -26,7 +28,9 @@ Pages, every Page's posts and the comments under them, active ads, the whole wor
   най-зле?", "сравни Raffy и Дивака", "колко често постват?", "какви реклами пуска Лидл?") → answer from its
   `report.json` (numbers only from there; quote reviews and comments word for word), say the date of the data, and
   offer a fresh run only if the data is old or the user asks for "нови" / "обнови" / "пусни пак".
-- Asks for new data, a brand that is not there yet, or "обнови / пусни пак" → start a run (below).
+- Asks for data on a brand, a brand that is not there yet, or anything is missing → `scripts/run_bg.sh "<brand>"`
+  (it completes what is missing). Only "обнови", "нови данни", "пусни наново от нулата" → a brand-new run:
+  `FRESH=1 scripts/run_bg.sh "<brand>"`.
 - "покажи / отвори" → open the report (`report.html` of the latest run) or the dashboard (`output/index.html`).
 - "докъде е / какво прави" → `scripts/status.sh` and report; "спри" → `scripts/stop.sh`; "продължи" →
   `scripts/run_bg.sh --resume`.

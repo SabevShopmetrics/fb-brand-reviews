@@ -25,6 +25,13 @@ if [ "$1" = "--resume" ]; then
 else
   [ -n "$1" ] || { echo 'USAGE: scripts/run_bg.sh "<brand>" [max_locations] [max_reviews] [lite|lite-hidden]'; exit 4; }
   args=(scrape "$1" --max-locations "${2:-0}" --max-reviews "${3:-0}")
+  # one message does everything: an unfinished recent run of this brand is finished instead of starting over
+  # (FRESH=1 = always start a new run, e.g. "обнови" / "пусни наново")
+  if [ -z "${FRESH:-}" ] && [ "${2:-0}${3:-0}" = "00" ] && [ "${5:-all}" = "all" ] && [ "${6:-all}" = "all" ] && [ -z "${7:-}" ]; then
+    target=$(.venv/bin/python -m fbreviews resume-target "$1" 2>/dev/null)
+    [ -n "$target" ] && { args=(scrape --resume "$target"); echo "RESUMING $target (unfinished run of this brand)"; }
+  fi
+  if [ "${args[2]}" != "--resume" ] && [ "${args[1]}" != "--resume" ]; then
   case "$4" in
     lite|--lite) args+=(--lite) ;;
     lite-hidden|hidden) args+=(--lite --hidden) ;;
@@ -32,6 +39,7 @@ else
   [ -n "$5" ] && [ "$5" != "all" ] && args+=(--country "$5")
   case "${6:-}" in noposts|--no-posts) args+=(--no-posts) ;; esac
   [ -n "${7:-}" ] && args+=(--hint "$7")   # free-form instructions from the user, passed to the agent as they are
+  fi
 fi
 nohup zsh scripts/_job.sh "${args[@]}" > "$log" 2>&1 < /dev/null &
 echo $! > output/runs/current.pid

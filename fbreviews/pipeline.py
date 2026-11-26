@@ -156,6 +156,29 @@ def load_posts(ws: Path, url: str) -> list[Post]:
     return out
 
 
+def unfinished_run(out_dir: Path, brand: str, max_age_days: float = 7) -> Path | None:
+    """The brand's latest run if it is recent and not finished: locations left, posts or comments not collected
+    (unless the run was lite / without posts), or no report yet. None = start a new run."""
+    import time as _t
+
+    runs = sorted((d for d in Path(out_dir).glob(f"{slug(brand)}_*") if d.is_dir() and (d / "meta.json").exists()),
+                  key=lambda d: d.name, reverse=True)
+    if not runs:
+        return None
+    d = runs[0]
+    if _t.time() - (d / "meta.json").stat().st_mtime > max_age_days * 86400:
+        return None
+    try:
+        meta = json.loads((d / "meta.json").read_text())
+    except (OSError, ValueError):
+        return None
+    p = progress_of(d)
+    content = not meta.get("lite") and meta.get("posts", True) is not False
+    left = (p["locations"] and p["done"] < p["locations"]) or (content and (p["posts_todo"] or p["comments_todo"])) \
+        or not (d / "report.json").exists() or (p["locations"] == 0 and not meta.get("rounds"))
+    return d if left else None
+
+
 def progress_of(run_dir: Path) -> dict:
     ws = run_dir / "workspace"
     try:
@@ -366,8 +389,10 @@ async def run(
         lite = True  # a lite run continues as lite
         hidden = hidden or bool(meta.get("hidden"))
     country = country or meta.get("country") or s.country
+    if resume and meta.get("posts") is False:
+        posts = False  # a run started without posts continues without them
     meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model,
-                 "country": country,
+                 "country": country, "posts": posts,
                  "lite": lite, "hidden": hidden})
     locations_given = False
     if locations_file:
@@ -421,6 +446,9 @@ async def run(
         idle_rounds = 0
         for round_no in range(len(meta["rounds"]) + 1, len(meta["rounds"]) + 1 + s.max_rounds):
             before = progress_of(run_dir)
+            if resume and before["locations"] and before["done"] >= before["locations"] and not before["stopped"]:
+                progress(f"Всички {before['locations']} локации вече са готови — минавам направо към съдържанието.")
+                break
             progress(f"Рунд {round_no}: агентът работи… (локации {before['locations']}, готови {before['done']})")
             tail_stop = asyncio.Event()
             tail = asyncio.create_task(_tail_progress(ws / "progress.log", tail_stop, progress))

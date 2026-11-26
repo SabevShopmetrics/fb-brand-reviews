@@ -312,6 +312,8 @@ manager about the business. Rules:
   about collecting more data, or asking anyone (an owner, Facebook) for data.
 - Name pages and locations as given. Write plain Bulgarian for a manager: never field names (reply_rate,
   template_share, ads_active…) — say "отговаря на 15% от ревютата", "80% от отговорите са шаблонни". Be specific and short.
+  engagement = reactions + comments + shares of a post: write "взаимодействия" ("средно 8 взаимодействия на пост"),
+  never "възприемане", "ангажимент" or "engagement".
 Return only JSON:
 {"headline": "one sentence: the main finding",
  "findings": [{"title": "short", "text": "2-3 sentences with the numbers", "tone": "good|bad|neutral",

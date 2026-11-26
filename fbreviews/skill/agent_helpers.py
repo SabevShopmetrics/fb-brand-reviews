@@ -1272,7 +1272,7 @@ def fb_extract_posts(url, name=None):
     r = fb_open(page)
     if not isinstance(r, dict) or not r.get("ok"):
         return {"status": (r or {}).get("state", "unknown"), "posts": 0}
-    opts = {"steps": 6, "delayMs": 1100, "maxPosts": MAX_POSTS, "since": POSTS_SINCE, "budgetMs": 12000}
+    opts = {"steps": 6, "delayMs": 1100, "maxPosts": MAX_POSTS, "since": POSTS_SINCE, "budgetMs": 8000}
     deadline, last, st, errors, posts, k = time.time() + SCROLL_MAX_S, -1, {}, 0, [], 0
     while time.time() < deadline:
         try:

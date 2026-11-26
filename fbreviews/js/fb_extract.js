@@ -793,7 +793,7 @@ window.__fbx = (function () {
   async function scrollPosts(opts) {
     opts = opts || {};
     var steps = opts.steps || 8, delay = opts.delayMs || 1100, max = opts.maxPosts || 100000;
-    var budget = opts.budgetMs || 12000, t0 = Date.now();   // always return well inside the evaluate limit
+    var budget = opts.budgetMs || 8000, t0 = Date.now();   // always return well inside the evaluate limit
     var st = window.__fbxPostState || (window.__fbxPostState = { last: 0, stable: 0, lastNewAt: Date.now() });
     var reason = null, acc;
     for (var i = 0; i < steps && Date.now() - t0 < budget; i++) {
@@ -811,6 +811,7 @@ window.__fbx = (function () {
         var oldest = acc.order.map(function (k) { return acc.map[k].date_full; }).filter(Boolean).slice(-1)[0];
         if (oldest && F.dateIso && F.dateIso(oldest) && F.dateIso(oldest) < opts.since) { reason = 'reached_since'; break; }
       }
+      if (Date.now() - t0 > budget) break;   // a throttled background tab: hand back what we have, the caller loops
       if (st.stable >= 6 && Date.now() - st.lastNewAt > 12000) {
         window.scrollTo(0, document.documentElement.scrollHeight); await sleep(delay * 2);
         if (accumulatePosts().order.length === c) { reason = 'no_more'; break; }

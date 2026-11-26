@@ -155,3 +155,16 @@ def test_insights_without_model(tmp_path):
     p = ins["pages"][0]
     assert p["negative"] == 2 and p["negative_reply_rate"] == 50 and p["negative_unanswered"] == 1
     assert p["reply_delay_days"] is not None and "food" in p["topics_positive"]
+
+
+def test_excel_with_structured_actions(tmp_path):
+    report = _report()
+    asyncio.run(classify_replies(report.locations, "Zara", llm=None))
+    report.summary = summarize(report)
+    page = {"name": "Zara Mall Sofia", "is_brand": False, "reviews": 3, "positive": 2, "neutral": 0, "negative": 1, "top_positive": [],
+            "top_negative": [], "reply_rate": 50, "negative_reply_rate": 0, "negative_unanswered": 1, "template_share": 0, "reply_delay_days": None}
+    report.insights = {"pages": [page], "business": {"headline": "h", "findings": [{"title": "t", "text": "x", "tone": "bad"}],
+                                                 "actions": [{"text": "Отговорете", "priority": "high", "because": "t"}, "низ"]}}
+    write_excel(report, tmp_path / "r.xlsx")
+    rows = [[c.value for c in r] for r in load_workbook(tmp_path / "r.xlsx")["Изводи"].iter_rows(min_row=2)]
+    assert ["Следваща стъпка (спешно)", "Отговорете", "t"] in rows and ["Следваща стъпка", "низ", ""] in rows

@@ -169,7 +169,9 @@ def write_excel(report: BrandReport, path: Path) -> None:
             rows = [["Основен извод", biz.get("headline") or "", ""]]
             rows += [[f.get("title"), f.get("text"), {"good": "добро", "bad": "лошо"}.get(f.get("tone"), "")]
                      for f in biz["findings"]]
-            rows += [["Следваща стъпка", a, ""] for a in biz.get("actions") or []]
+            rows += [["Следваща стъпка" + (" (спешно)" if isinstance(a, dict) and a.get("priority") == "high" else ""),
+                      a.get("text", "") if isinstance(a, dict) else str(a),
+                      (a.get("because") or "") if isinstance(a, dict) else ""] for a in biz.get("actions") or []]
             _sheet(wb, "Изводи", ["Какво", "Защо / числата", "Оценка"], rows, [34, 100, 10])
         _sheet(wb, "Сигнали", ["Страница", "Важност", "Какво"],
                [[s["page"], {"high": "висока", "medium": "средна"}.get(s["level"], s["level"]), s["text"]]

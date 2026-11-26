@@ -282,11 +282,18 @@ def fb_open(url):
     pace["pages"] += 1
     pace["last"] = time.time()
     _write("pace.json", pace)
-    if _JS:  # the bundled check only, never an override's
-        _inject(h, override="")
-        state = h.js("(window.__fbxBasePageState || window.__fbx.pageState)()")
-    else:
-        state = {"state": "ok"}
+    state = {"state": "ok"}
+    if _JS:  # the bundled check only, never an override's; a page still loading may not answer at once
+        for attempt in range(3):
+            try:
+                _inject(h, override="")
+                state = h.js("(window.__fbxBasePageState || window.__fbx.pageState)()") or {"state": "ok"}
+                break
+            except Exception as e:
+                if attempt == 2:
+                    _say(f"  страницата не отговаря ({str(e)[:60]}) — пропускам я")
+                    return {"ok": False, "state": "unknown", "reason": str(e)[:200]}
+                time.sleep(4)
     if LITE and state.get("state") == "login_required" and "/login" not in (state.get("url") or ""):
         state = {**state, "state": "ok", "logged_out": True}
     if state.get("state") in ("login_required", "blocked"):

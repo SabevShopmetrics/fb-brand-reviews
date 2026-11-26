@@ -567,6 +567,16 @@ def test_unfinished_run_is_found(tmp_path):
     (d / "workspace" / "posts" / "d1.json").write_text(json.dumps({"posts": [{"permalink": "p", "comments": 0}]}))
     assert unfinished_run(tmp_path, "Дивака") is None         # everything collected
     assert unfinished_run(tmp_path, "Raffy") is None
+    # one more location that 3 rounds in a row could not save → not run again (the rounds would only repeat)
+    (d / "workspace" / "locations.json").write_text(json.dumps(
+        [{"url": "https://www.facebook.com/d1"}, {"url": "https://www.facebook.com/d2"}]))
+    assert unfinished_run(tmp_path, "Дивака") == d
+    stuck = {"after_done": 1, "after_locations": 2, "notes": "no reviews tab"}
+    (d / "meta.json").write_text(json.dumps({"rounds": [{}, stuck, stuck, stuck], "brand": "Дивака"}))
+    assert unfinished_run(tmp_path, "Дивака") is None
+    down = dict(stuck, notes="ModelUnavailable 503")       # the model was down: worth another run
+    (d / "meta.json").write_text(json.dumps({"rounds": [stuck, stuck, down], "brand": "Дивака"}))
+    assert unfinished_run(tmp_path, "Дивака") == d
 
 
 def test_posts_survive_slow_steps(tmp_path, monkeypatch):

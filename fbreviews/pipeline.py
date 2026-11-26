@@ -174,9 +174,20 @@ def unfinished_run(out_dir: Path, brand: str, max_age_days: float = 7) -> Path |
         return None
     p = progress_of(d)
     content = not meta.get("lite") and meta.get("posts", True) is not False
-    left = (p["locations"] and p["done"] < p["locations"]) or (content and (p["posts_todo"] or p["comments_todo"])) \
+    left = (p["locations"] and p["done"] < p["locations"] and not locations_stuck(meta, p)) or (content and (p["posts_todo"] or p["comments_todo"])) \
         or not (d / "report.json").exists() or (p["locations"] == 0 and not meta.get("rounds"))
     return d if left else None
+
+
+def locations_stuck(meta: dict, p: dict) -> bool:
+    """The last 3 agent rounds saved no new location (and the model was not down): the locations left cannot be
+    collected (duplicates, no reviews tab, gone). Running the brand again would only repeat those rounds."""
+    rounds = [r for r in meta.get("rounds", []) if isinstance(r, dict)][-3:]
+    if len(rounds) < 3:
+        return False
+    if any(any(t in str(r.get("notes", "")) for t in TRANSIENT) for r in rounds):
+        return False
+    return all(r.get("after_done") == p["done"] and r.get("after_locations") == p["locations"] for r in rounds)
 
 
 def progress_of(run_dir: Path) -> dict:

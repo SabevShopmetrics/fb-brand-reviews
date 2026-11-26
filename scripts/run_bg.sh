@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Start a scrape in the background and return at once (for OpenWork's agent, whose commands have a time limit).
-#   scripts/run_bg.sh "Zara" [max_locations=0] [max_reviews=0] [auto|lite-hidden] [country|all] [noposts]   (0 = all)
+#   scripts/run_bg.sh "Zara" [max_locations=0] [max_reviews=0] [auto|lite-hidden] [country|all] [noposts|all] ["hint"]
+#   (0 = all; "hint" = the user's own extra instructions, e.g. "official Page: facebook.com/x; only mall stores")
 #   The mode is automatic: logged in to Facebook in OpenWork -> full mode; logged out -> lite. Country default: the whole world.
 #   lite        = only public Page data (% recommend, number of reviews, address, phone), in OpenWork's visible browser
 #   lite-hidden = the same in a hidden fresh browser with no Facebook account (OpenWork not needed)
@@ -30,6 +31,7 @@ else
   esac
   [ -n "$5" ] && [ "$5" != "all" ] && args+=(--country "$5")
   case "${6:-}" in noposts|--no-posts) args+=(--no-posts) ;; esac
+  [ -n "${7:-}" ] && args+=(--hint "$7")   # free-form instructions from the user, passed to the agent as they are
 fi
 nohup zsh scripts/_job.sh "${args[@]}" > "$log" 2>&1 < /dev/null &
 echo $! > output/runs/current.pid

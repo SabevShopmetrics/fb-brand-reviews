@@ -11,14 +11,44 @@ report the result. Do not scrape Facebook yourself and do not edit the tool's co
 
 Tool folder (TOOL_DIR): `__TOOL_DIR__`
 
-## A brand name alone is the whole request
-If the user writes only a brand name ("Дивака", "Zara"), that means: start the full run for that brand now, with the
-defaults below, follow it to the end and open the dashboard. Do not ask what to collect and do not ask for
-confirmation. Defaults (never add limits on your own): all locations, all reviews with the Page's replies, the brand's
-own Pages, every Page's posts and the comments under them, active ads, the whole world, then the business
-conclusions. Only change a default when the user says so in words: "само ревюта" / "без постове" → 6th argument
-`noposts` (`scripts/run_bg.sh "<brand>" 0 0 auto all noposts`); a country → 5th argument; "бърз тест" / numbers →
-max locations / max reviews.
+## Free-form requests — the user writes whatever they want
+The user writes in their own words (Bulgarian or English, any length). Work out what they want and do it; ask a
+question only when the brand is missing or the request is truly ambiguous. A brand name alone ("Дивака", "Zara")
+means: start the full run now with every default and follow it to the end.
+
+**Defaults** (never add limits on your own): all locations, all reviews with the Page's replies, the brand's own
+Pages, every Page's posts and the comments under them, active ads, the whole world, then the business conclusions.
+
+**First decide: new data, or an answer from data we already have?**
+`cd "__TOOL_DIR__" && .venv/bin/python -m fbreviews latest "<brand>"` lists the latest run with data for that brand
+(folder, report.json, report.html, date, numbers); `latest` with no brand lists every brand extracted so far.
+- A question about a brand that is already there ("какво пишат за обслужването в Дивака?", "коя локация на Raffy е
+  най-зле?", "сравни Raffy и Дивака", "колко често постват?", "какви реклами пуска Лидл?") → answer from its
+  `report.json` (numbers only from there; quote reviews and comments word for word), say the date of the data, and
+  offer a fresh run only if the data is old or the user asks for "нови" / "обнови" / "пусни пак".
+- Asks for new data, a brand that is not there yet, or "обнови / пусни пак" → start a run (below).
+- "покажи / отвори" → open the report (`report.html` of the latest run) or the dashboard (`output/index.html`).
+- "докъде е / какво прави" → `scripts/status.sh` and report; "спри" → `scripts/stop.sh`; "продължи" →
+  `scripts/run_bg.sh --resume`.
+
+**Turning the request into a run** — `scripts/run_bg.sh "<brand>" <max_loc> <max_rev> <mode> <country> <posts> "<hint>"`
+| The user says (examples) | Argument |
+|---|---|
+| a country or "само в България", "в Румъния" | 5th: `"Bulgaria"` (English name); the whole world = `all` |
+| "само ревюта", "без постове", "бързо, без коментари" | 6th: `noposts` (otherwise `all`) |
+| "бърз тест", "само 2 локации", "по 20 ревюта" | 2nd / 3rd: the numbers (0 = all) |
+| "невидимо", "без профил" | 4th: `lite-hidden` (otherwise `auto`) |
+| anything else about WHAT or WHERE to collect: "страницата им е facebook.com/divaka.bg", "само ресторантите в моловете", "игнорирай франчайзите", "търси и като Divaka" | 7th: the user's words as a hint, passed to the tool's agent as they are |
+
+Examples:
+- "Дивака" → `scripts/run_bg.sh "Дивака"`
+- "Извади ревютата на Лидл само за България, без постовете" → `scripts/run_bg.sh "Лидл" 0 0 auto "Bulgaria" noposts`
+- "Raffy, официалната им страница е facebook.com/raffybargelato, искам и коментарите" →
+  `scripts/run_bg.sh "Raffy Bar & Gelato" 0 0 auto all all "официалната страница е facebook.com/raffybargelato"`
+- "Колко от ревютата на Дивака са негативни?" → `fbreviews latest "Дивака"` and answer from its report.json.
+
+What the tool cannot do, say so plainly: it only reads Facebook (no posting, liking or replying), never gets around a
+login or a CAPTCHA, and Facebook does not show the text of other people's comments under reviews (only their count).
 
 ## Logged in or not — automatic (never choose the mode yourself)
 The tool decides by itself: logged in to Facebook in the built-in browser → FULL mode (all reviews, the Page's
@@ -38,7 +68,7 @@ When you report the result, give the per-country summary first.
    never log in for them.
 2. If `TOOL_DIR/.env` is missing or `scripts/run_bg.sh` answers `NEEDS_ENV`, ask the user to fill
    `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `TOOL_DIR/.env` (open it for them). Never print the key.
-3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING (see "A brand name alone").
+3. Ask only for the brand if it is missing. By default the tool takes EVERYTHING (see "Free-form requests").
    Never add limits on your own; use numbers only if the user explicitly asks for a quick test.
 
 ## Run

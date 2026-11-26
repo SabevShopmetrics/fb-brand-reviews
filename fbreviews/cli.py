@@ -103,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     fn.add_argument("--brand")
     fn.add_argument("--no-llm-classifier", action="store_true")
 
+    lt = sub.add_parser("latest", help="последното пускане с данни за бранд (или всички): папка, отчет, дата")
+    lt.add_argument("brand", nargs="?")
+    lt.add_argument("--out", type=Path, default=Path("output"))
+
     db = sub.add_parser("dashboard", help="output/index.html — всички извлечени брандове с табове")
     db.add_argument("--out", type=Path, default=Path("output"))
 
@@ -113,6 +117,26 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "check":
         return cmd_check(s)
+
+    if a.cmd == "latest":
+        from .fburl import slug as _slug
+        from .html_report import collect_runs
+
+        rows = []
+        for st in collect_runs(a.out):
+            d = st["data"]
+            if a.brand and _slug(a.brand) not in (st["key"], _slug(d.get("brand", ""))) and \
+                    a.brand.lower() not in (d.get("brand") or "").lower():
+                continue
+            run = (a.out / st["run"]).resolve()
+            pages = (d.get("brand_sections") or []) + (d.get("locations") or [])
+            rows.append({"brand": d.get("brand"), "updated": d.get("generated_at"), "run": str(run),
+                         "report_json": str(run / "report.json"), "report_html": str(run / "report.html"),
+                         "locations": len(d.get("locations") or []), "brand_pages": len(d.get("brand_sections") or []),
+                         "reviews": sum(len(p.get("reviews") or []) for p in pages),
+                         "posts": sum(len(p.get("posts") or []) for p in pages)})
+        print(json.dumps(rows, ensure_ascii=False, indent=1) if rows else "NO_DATA")
+        return 0 if rows else 3
 
     if a.cmd == "dashboard":
         from .html_report import write_index

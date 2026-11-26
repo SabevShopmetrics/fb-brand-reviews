@@ -17,7 +17,8 @@ defaults below, follow it to the end and open the dashboard. Do not ask what to 
 confirmation. Defaults (never add limits on your own): all locations, all reviews with the Page's replies, the brand's
 own Pages, every Page's posts and the comments under them, active ads, the whole world, then the business
 conclusions. Only change a default when the user says so in words: "само ревюта" / "без постове" → 6th argument
-`noposts`; a country → 5th argument; "бърз тест" / numbers → max locations / max reviews.
+`noposts` (`scripts/run_bg.sh "<brand>" 0 0 auto all noposts`); a country → 5th argument; "бърз тест" / numbers →
+max locations / max reviews.
 
 ## Logged in or not — automatic (never choose the mode yourself)
 The tool decides by itself: logged in to Facebook in the built-in browser → FULL mode (all reviews, the Page's

@@ -29,6 +29,9 @@ A post opens as a window over the account's news feed: the helpers read ONLY tha
 comments), never the feed. Comments that are only tagged friends or stickers are kept as they are (they show
 reach, not opinion).
 
-## Finish
-Return the summary: posts collected, posts whose comments were read, `complete` = `posts_todo` empty and
+## Finish — as soon as `fb_extract_comments()` returns `done: True`
+Stop there and return the summary. Do NOT open posts again, read the page with your own JavaScript or compare
+counts: some posts always give fewer comments than their count (reels, link posts, hidden / deleted / filtered
+comments) — that is a known limit, not an error to investigate. The result already gives `posts_fewer_than_count`
+and `posts_none_read`: put them in notes. Return the summary: posts collected, posts whose comments were read, `complete` = `posts_todo` empty and
 `comments_todo` 0, and notes (pages that would not open, a stop).

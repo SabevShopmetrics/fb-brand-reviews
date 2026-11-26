@@ -1368,4 +1368,24 @@ def fb_extract_comments(budget_s=None):
             p["comments_list"] = (c or {}).get("comments", []) if isinstance(c, dict) else []
         data["posts"][i] = p
         _write(f"posts/{fname}", data)
-    return {"done": True, "opened": opened, "left": 0}
+    return {"done": True, "opened": opened, "left": 0, **_comment_gaps(),
+            "next": "Phase 4 is complete. Finish the round now with the summary; do not open posts again or read the "
+                    "page yourself. Fewer comments read than the post's count is a known limit (reels, link posts, "
+                    "hidden or deleted comments): say the numbers in notes."}
+
+
+def _comment_gaps():
+    """How complete the read comments are, so nobody has to open posts again to check."""
+    read = fewer = none = reels = 0
+    for f in sorted((_WS / "posts").glob("*.json")) if (_WS / "posts").exists() else []:
+        for p in (_read(f"posts/{f.name}", {}) or {}).get("posts", []):
+            if not (p.get("comments") or 0) or p.get("comments_list") is None:
+                continue
+            got = len(p["comments_list"])
+            read += 1
+            if got == 0:
+                none += 1
+                reels += "/reel/" in str(p.get("permalink"))
+            elif got < (p.get("comments") or 0):
+                fewer += 1
+    return {"posts_read": read, "posts_fewer_than_count": fewer, "posts_none_read": none, "of_them_reels": reels}

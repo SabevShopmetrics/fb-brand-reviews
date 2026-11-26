@@ -47,7 +47,8 @@ are done; this round collects the Pages' posts and the comments under them. Read
 domain-skills/facebook/content.md (path below) and follow it with its helpers (fb_progress, fb_extract_posts,
 fb_extract_comments): they keep a safe pace, read only the post and its comments (never the account's feed) and save
 everything. Read only: never like, comment, follow or message. Never solve or get around a CAPTCHA / checkpoint /
-login: stop the run and report it.
+login: stop the run and report it. When fb_extract_comments() returns done: True, finish the round at once — never
+re-open posts or read the page yourself to check the numbers (fewer comments than the count is a known limit).
 """
 
 SYSTEM_RULES_LITE = """\

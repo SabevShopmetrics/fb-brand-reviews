@@ -251,6 +251,259 @@ def signals(results: list[LocationResult], days: int = 90) -> list[dict]:
     return sorted(out, key=lambda s: order.get(s["level"], 2))
 
 
-def build_insights(brand_results: list[LocationResult], results: list[LocationResult], method: str) -> dict:
-    pages = [page_insights(r) for r in list(brand_results) + list(results) if r.reviews]
-    return {"method": method, "topics": TOPICS, "pages": pages, "signals": signals(list(brand_results) + list(results))}
+def content_signals(content: list[dict]) -> list[dict]:
+    out = []
+    for c in content:
+        if c["posts"] and c.get("last_post"):
+            days = (datetime.now(timezone.utc).date() - datetime.fromisoformat(c["last_post"]).date()).days
+            if days > 60:
+                out.append({"page": c["name"], "kind": "silent", "level": "medium",
+                            "text": f"не е публикувала от {days} дни (последен пост {c['last_post']})"})
+        q, a = c.get("questions_or_complaints") or 0, c.get("questions_answered") or 0
+        if q >= 5 and a / q < 0.3:
+            out.append({"page": c["name"], "kind": "comments_unanswered", "level": "medium",
+                        "text": f"отговорено на {a} от {q} въпроса/оплаквания в коментарите под постовете"})
+    return out
+
+
+def build_insights(brand_results: list[LocationResult], results: list[LocationResult], method: str,
+                   content_method: str = "") -> dict:
+    every = list(brand_results) + list(results)
+    pages = [page_insights(r) for r in every if r.reviews]
+    content = [content_insights(r) for r in every if r.reviews or r.posts]
+    return {"method": method, "content_method": content_method, "topics": TOPICS, "post_topics": POST_TOPICS,
+            "intents": INTENTS, "pages": pages, "content": content,
+            "signals": signals(every) + content_signals(content)}
+
+
+# ------------------------------------------------------------------ posts, comments, time lines, the business summary
+POST_TOPICS = {
+    "promo": "промоция / оферта", "product": "продукт / меню", "event": "събитие", "hiring": "търсим служители",
+    "cause": "кауза / благотворителност", "holiday": "празник / поздрав", "brand": "атмосфера / бранд",
+    "info": "информация (работно време, ново място)", "contest": "игра / томбола", "other": "друго",
+}
+INTENTS = {"question": "въпрос", "praise": "похвала", "complaint": "оплакване", "mention": "отбелязва приятел",
+           "other": "друго"}
+
+POST_SYSTEM = """You classify posts that a brand published on its Facebook Page. For every item return "topic" — one of:
+promo (offer, discount, price), product (a dish, product, menu, new item), event (an event, concert, opening),
+hiring (job offer), cause (charity, social cause), holiday (greeting, holiday), brand (atmosphere, team, behind the
+scenes, brand story), info (opening hours, new address, practical news), contest (giveaway, game), other — and
+"summary": what the post says, in Bulgarian, at most 10 words.
+Return only JSON: {"items": [{"id": 0, "topic": "...", "summary": "..."}]}"""
+
+COMMENT_SYSTEM = """You classify comments under a brand's Facebook posts. For every item return "intent" — question
+(asks something: price, hours, booking, availability), praise, complaint, mention (only tags friends or a sticker, no
+opinion), other — and "sentiment": positive | neutral | negative.
+Return only JSON: {"items": [{"id": 0, "intent": "...", "sentiment": "..."}]}"""
+
+SUMMARY_SYSTEM = """You are a business analyst. You get statistics computed from a brand's Facebook Pages (its reviews,
+the Page's replies, its posts, the comments under them and its ads). Write, in Bulgarian, what these numbers tell a
+manager about the business. Rules:
+- Use ONLY the numbers given and quote them. Never invent figures, causes, or comparisons with an industry, sector,
+  market or "average" — you have no such benchmark; compare only within the data (page vs page, type vs type,
+  topic vs topic, positive vs negative).
+- Every action must follow from a finding and agree with the numbers: never suggest more of a content type or topic
+  that performs WORSE than the others; never recommend something the data cannot support.
+- Name pages and locations as given. Write plain Bulgarian for a manager: never field names (reply_rate,
+  template_share, ads_active…) — say "отговаря на 15% от ревютата", "80% от отговорите са шаблонни". Be specific and short.
+Return only JSON:
+{"headline": "one sentence: the main finding",
+ "findings": [{"title": "short", "text": "2-3 sentences with the numbers", "tone": "good|bad|neutral"}],   // 4-8
+ "actions": ["a concrete next step, one sentence"]}   // 2-5"""
+
+
+async def _llm_json(system: str, payload: dict, llm: dict) -> dict:
+    from openai import AsyncOpenAI
+
+    from .classify import _parse_json
+
+    client = AsyncOpenAI(base_url=llm["base_url"], api_key=llm.get("api_key") or "not-needed")
+    for attempt in range(3):
+        try:
+            resp = await client.chat.completions.create(
+                model=llm["model"], temperature=0,
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
+            return _parse_json(resp.choices[0].message.content or "")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("insights call failed (attempt %d): %s", attempt + 1, e)
+            await asyncio.sleep(2 * (attempt + 1))
+    return {}
+
+
+def _load_cache(path: Path | None) -> dict:
+    if path and path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            return {}
+    return {}
+
+
+def _post_heuristic(text: str) -> str:
+    t = (text or "").lower()
+    for topic, rx in (("hiring", r"търсим|позиция|кандидатств|работа при нас|hiring|we.re hiring|join our team"),
+                      ("contest", r"игра|томбола|печели|подарък за|giveaway|win "),
+                      ("promo", r"промо|отстъпк|%|оферта|цена|само за|black friday|черен петък|discount|offer"),
+                      ("event", r"събитие|концерт|откриване|заповядайте на \d|event|opening"),
+                      ("holiday", r"честит|празник|коледа|великден|нова година|happy|merry"),
+                      ("cause", r"кампания|благотвор|дарение|кауза|charity"),
+                      ("info", r"работно време|затворено|нов адрес|отваряме|opening hours"),
+                      ("product", r"меню|ястие|вкус|сезонн|нов продукт|опитайте|menu|dish|taste")):
+        if re.search(rx, t):
+            return topic
+    return "brand" if t else "other"
+
+
+async def analyze_posts(results: list[LocationResult], *, llm: dict | None, cache_path: Path | None,
+                        batch_size: int = 20, concurrency: int = 4) -> str:
+    cache = _load_cache(cache_path)
+    posts = [p for r in results for p in r.posts]
+    comments = [c for p in posts for c in (p.comments_list or [])]
+    key = lambda kind, text: kind + ":" + hashlib.sha1((text or "").encode()).hexdigest()[:16]  # noqa: E731
+    sem = asyncio.Semaphore(concurrency)
+
+    async def run(kind, items, system):
+        payload = [{"id": i, "text": (t or "")[:1200]} for i, (_, t) in enumerate(items)]
+        async with sem:
+            got = await _llm_json(system, {"items": payload}, llm)
+        by = {int(x["id"]): x for x in (got or {}).get("items", []) if isinstance(x, dict) and "id" in x}
+        for i, (k, _) in enumerate(items):
+            if i in by:
+                cache[k] = by[i]
+
+    todo_p = [(key("p", p.text), p.text) for p in posts if p.text and key("p", p.text) not in cache]
+    todo_c = [(key("c", c.text), c.text) for c in comments
+              if c.text and not c.tags_only and key("c", c.text) not in cache]
+    if llm:
+        await asyncio.gather(*(run("p", todo_p[j:j + batch_size], POST_SYSTEM) for j in range(0, len(todo_p), batch_size)),
+                             *(run("c", todo_c[j:j + 30], COMMENT_SYSTEM) for j in range(0, len(todo_c), 30)))
+    for p in posts:
+        c = cache.get(key("p", p.text)) or {}
+        p.topic = c.get("topic") if c.get("topic") in POST_TOPICS else _post_heuristic(p.text)
+        p.summary = c.get("summary")
+    for cm in comments:
+        if cm.tags_only or not cm.text:
+            cm.intent, cm.sentiment = "mention", "neutral"
+            continue
+        c = cache.get(key("c", cm.text)) or {}
+        cm.intent = c.get("intent") if c.get("intent") in INTENTS else ("question" if "?" in cm.text else "other")
+        cm.sentiment = c.get("sentiment") if c.get("sentiment") in SENTIMENTS else "neutral"
+    if cache_path:
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    if not posts:
+        return ""
+    return f"model ({llm['model']})" if llm else "keywords (no model)"
+
+
+def _count(text: str | None) -> int | None:
+    m = re.match(r"\s*([\d.,]+)\s*(хил\.|млн\.|[KkMm])?", text or "")
+    if not m:
+        return None
+    v = float(m.group(1).replace(",", "."))
+    mult = {"хил.": 1e3, "k": 1e3, "млн.": 1e6, "m": 1e6}.get((m.group(2) or "").lower(), 1)
+    return int(v * mult)
+
+
+def _month(d: datetime | None) -> str | None:
+    return d.strftime("%Y-%m") if d else None
+
+
+def content_insights(res: LocationResult) -> dict:
+    """One Page: reviews and posts by month, posting rhythm, content types and topics, engagement, comments."""
+    ref = _ref(res)
+    rev_m: dict[str, dict] = {}
+    for r in res.reviews:
+        m = _month(review_date(r, ref))
+        if not m:
+            continue
+        b = rev_m.setdefault(m, {"pos": 0, "neg": 0, "photos": 0, "text": 0})
+        b["neg" if r.recommends is False else "pos"] += 1
+        b["photos"] += 1 if (r.photos or 0) > 0 else 0
+        b["text"] += 1 if (r.text or "").strip() else 0
+    posts = res.posts
+    post_m: dict[str, int] = {}
+    dated = []
+    for p in posts:
+        d = review_date(Review(date_full=p.date_full), ref)
+        if d:
+            dated.append(d)
+            post_m[_month(d)] = post_m.get(_month(d), 0) + 1
+    last90 = [d for d in dated if d >= ref - timedelta(days=90)]
+    eng = [(p.reactions or 0) + (p.comments or 0) + (p.shares or 0) for p in posts]
+    by_type: dict[str, dict] = {}
+    by_topic: dict[str, dict] = {}
+    for p, e in zip(posts, eng):
+        for dct, k in ((by_type, p.type or "text"), (by_topic, p.topic or "other")):
+            b = dct.setdefault(k, {"posts": 0, "engagement": 0})
+            b["posts"] += 1
+            b["engagement"] += e
+    for dct in (by_type, by_topic):
+        for b in dct.values():
+            b["avg_engagement"] = round(b["engagement"] / b["posts"], 1) if b["posts"] else 0
+    followers = _count(res.location.followers)
+    comments = [c for p in posts for c in (p.comments_list or [])]
+    intents: dict[str, int] = {}
+    for c in comments:
+        intents[c.intent or "other"] = intents.get(c.intent or "other", 0) + 1
+    questions = [c for c in comments if c.intent in ("question", "complaint") and not c.is_page_reply and c.depth == 1]
+    answered = 0
+    for p in posts:
+        cl = p.comments_list or []
+        for i, c in enumerate(cl):
+            if c in questions and any(x.is_page_reply for x in cl[i + 1:i + 6] if x.depth == 2):
+                answered += 1
+    top = sorted(zip(posts, eng), key=lambda pe: -pe[1])[:5]
+    avg = round(sum(eng) / len(eng), 1) if eng else None
+    return {
+        "name": res.location.name, "url": res.location.url, "is_brand": res.is_brand,
+        "followers": followers, "reviews_by_month": dict(sorted(rev_m.items())),
+        "posts": len(posts), "posts_by_month": dict(sorted(post_m.items())),
+        "posts_per_week_90d": round(len(last90) / (90 / 7), 1) if posts else None,
+        "last_post": max(dated).date().isoformat() if dated else None,
+        "by_type": by_type, "by_topic": by_topic, "avg_engagement": avg,
+        "engagement_per_1k_followers": round(1000 * avg / followers, 2) if avg is not None and followers else None,
+        "top_posts": [{"date": p.date_full, "type": p.type, "topic": p.topic, "text": (p.text or "")[:160],
+                       "summary": p.summary, "engagement": e, "reactions": p.reactions, "comments": p.comments,
+                       "shares": p.shares, "permalink": p.permalink} for p, e in top],
+        "comments_read": len(comments), "comment_intents": intents,
+        "questions_or_complaints": len(questions), "questions_answered": answered,
+        "ads_active": res.location.ads_active, "ads": len(res.ads),
+    }
+
+
+async def business_summary(report_data: dict, *, llm: dict | None, cache_path: Path | None) -> dict:
+    """What the numbers say about the business: a headline, 4-8 findings, 2-5 next steps (model; cached by input)."""
+    if not llm:
+        return {}
+    ins = report_data.get("insights") or {}
+    pages = []
+    for loc in (report_data.get("brand_sections") or []) + (report_data.get("locations") or []):
+        st = loc.get("stats") or {}
+        pages.append({"page": loc["location"]["name"], "brand_page": loc.get("is_brand"), "status": loc.get("status"),
+                      "facebook_recommend_pct": loc.get("recommend_pct"), "facebook_review_total": loc.get("review_total"),
+                      "followers": loc["location"].get("followers"), "reviews_extracted": st.get("reviews"),
+                      "not_recommends": st.get("not_recommends"), "ads_active": loc["location"].get("ads_active")})
+    payload = {
+        "brand": report_data.get("brand"), "pages": pages,
+        "reviews_by_page": [{k: p.get(k) for k in ("name", "reviews", "positive", "neutral", "negative", "top_positive",
+                                                   "top_negative", "reply_rate", "negative_reply_rate",
+                                                   "negative_unanswered", "template_share")} for p in ins.get("pages", [])],
+        "content_by_page": [{k: c.get(k) for k in ("name", "followers", "posts", "posts_per_week_90d", "last_post",
+                                                   "by_type", "by_topic", "avg_engagement", "engagement_per_1k_followers",
+                                                   "comments_read", "comment_intents", "questions_or_complaints",
+                                                   "questions_answered", "ads_active")} for c in ins.get("content", [])],
+        "signals": [s.get("page", "") + ": " + s.get("text", "") for s in ins.get("signals", [])],
+        "topic_names": TOPICS, "post_topic_names": POST_TOPICS,
+    }
+    k = hashlib.sha1((SUMMARY_SYSTEM + json.dumps(payload, ensure_ascii=False, sort_keys=True)).encode()).hexdigest()[:16]
+    cache = _load_cache(cache_path)
+    if k in cache:
+        return cache[k]
+    out = await _llm_json(SUMMARY_SYSTEM, payload, llm)
+    if out.get("findings"):
+        cache = {k: out}
+        if cache_path:
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    return out

@@ -41,6 +41,15 @@ never save data you know is wrong, and never loosen the checks.
 Read only. Never solve or get around a CAPTCHA / checkpoint / login: stop the run and report it.
 """
 
+SYSTEM_RULES_CONTENT = """\
+You work inside the user's own, logged-in Facebook session in OpenWork's built-in browser, in one tab. The reviews
+are done; this round collects the Pages' posts and the comments under them. Read the skill file
+domain-skills/facebook/content.md (path below) and follow it with its helpers (fb_progress, fb_extract_posts,
+fb_extract_comments): they keep a safe pace, read only the post and its comments (never the account's feed) and save
+everything. Read only: never like, comment, follow or message. Never solve or get around a CAPTCHA / checkpoint /
+login: stop the run and report it.
+"""
+
 SYSTEM_RULES_LITE = """\
 Lite mode: collect only the PUBLIC data of each location's Facebook Page (what a visitor without an account sees).
 The browser is OpenWork's built-in one (the user watches it; it may or may not be logged in to Facebook) or a fresh
@@ -128,6 +137,21 @@ def task_text(brand: str, aw: Path, max_locations: int, hint: str | None, round_
     return "\n".join(lines)
 
 
+def task_text_content(brand: str, aw: Path, round_no: int) -> str:
+    """Phase 3 / 4 round: the reviews are done; now the posts of every saved Page and the comments under them."""
+    skill = aw / "domain-skills" / "facebook" / "content.md"
+    return "\n".join([
+        f'Brand: "{brand}". The reviews of every Page are already saved. Now collect the CONTENT of the same Pages: '
+        "their posts, then the comments under the posts. Do not search, do not add locations, do not redo reviews.",
+        f"Skill: read {skill} (print(open(r'{skill}').read())) and follow it. In short, run these cells:",
+        "1) for p in fb_progress()['posts_todo']:\n       r = fb_extract_posts(p['url'], name=p['name']); print(p['name'], r)\n"
+        "       if r.get('status') in ('login_required', 'blocked', 'stopped', 'cap_reached'): break",
+        "2) r = fb_extract_comments(); print(r)   # repeat this cell while r['done'] is False and r has no 'stopped'",
+        "Then finish with the summary (complete = posts_todo is empty and comments_todo is 0).",
+        *( [f"This is content round {round_no}: continue where the last one stopped."] if round_no > 1 else []),
+    ])
+
+
 CELL_TIMEOUT_S = float(os.environ.get("AGENT_CELL_TIMEOUT", "4000"))  # > LOCATION_MAX_SECONDS: one location per cell
 
 
@@ -151,7 +175,7 @@ def _allow_long_cells() -> None:
 
 async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspace: Path, max_locations: int,
                     hint: str | None, round_no: int, locations_given: bool, config: dict,
-                    country: str | None = None) -> RunSummary:
+                    country: str | None = None, phase: str = "reviews") -> RunSummary:
     from browser_use import Agent
 
     _allow_long_cells()
@@ -160,8 +184,13 @@ async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspac
     if not s.llm_vision:
         kwargs["use_vision"] = False
     lite = bool(config.get("lite"))
-    task = (task_text_lite if lite else task_text)(brand, aw, max_locations, hint, round_no, locations_given)
-    if country and country.lower() not in ("all", "world", "всички"):
+    if phase == "content":
+        task = task_text_content(brand, aw, round_no)
+    else:
+        task = (task_text_lite if lite else task_text)(brand, aw, max_locations, hint, round_no, locations_given)
+    if phase == "content":
+        pass
+    elif country and country.lower() not in ("all", "world", "всички"):
         task += (f"\nCountry: {country}. Take the brand's official Page for {country} (and the global one) and ONLY "
                  f"locations in {country}; skip other countries' Pages (e.g. Germany) and their stores. Search with "
                  f"{country} city names.")
@@ -174,7 +203,8 @@ async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspac
     agent = Agent(
         task,
         llm=llm, browser=browser, output_model_schema=RunSummary, workspace=str(workspace),
-        extend_system_message=SYSTEM_RULES_LITE if lite else SYSTEM_RULES, judge=s.judge, **kwargs,
+        extend_system_message=(SYSTEM_RULES_CONTENT if phase == "content" else SYSTEM_RULES_LITE if lite else SYSTEM_RULES),
+        judge=s.judge, **kwargs,
     )
     history = await agent.run(max_steps=s.max_steps, timeout=s.timeout)
     out = history.structured_output

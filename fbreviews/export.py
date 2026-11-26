@@ -149,6 +149,28 @@ def write_excel(report: BrandReport, path: Path) -> None:
                 "Оплакват се от (топ теми)", "% с отговор", "% отговорени негативни", "Негативни без отговор",
                 "% шаблонни отговори", "Отговор след (дни, прибл.)"],
                rows, [34, 9, 11, 10, 10, 30, 30, 10, 12, 12, 12, 12])
+        content = ins.get("content") or []
+        if any(c.get("posts") for c in content):
+            pt = ins.get("post_topics") or {}
+            _sheet(wb, "Съдържание",
+                   ["Страница", "Последователи", "Постове", "Постове/седмица (90 дни)", "Последен пост",
+                    "Средна ангажираност на пост", "Ангажираност на 1000 последователи", "По вид",
+                    "По тема", "Прочетени коментари", "Въпроси/оплаквания", "От тях с отговор", "Активни реклами"],
+                   [[("[Бранд] " if c["is_brand"] else "") + c["name"], c.get("followers"), c["posts"],
+                     c.get("posts_per_week_90d"), c.get("last_post"), c.get("avg_engagement"),
+                     c.get("engagement_per_1k_followers"),
+                     ", ".join(f"{k}: {v['posts']}" for k, v in (c.get("by_type") or {}).items()),
+                     ", ".join(f"{pt.get(k, k)}: {v['posts']}" for k, v in (c.get("by_topic") or {}).items()),
+                     c.get("comments_read"), c.get("questions_or_complaints"), c.get("questions_answered"),
+                     c.get("ads_active")] for c in content],
+                   [34, 12, 9, 12, 12, 12, 12, 30, 40, 11, 11, 11, 10])
+        biz = ins.get("business") or {}
+        if biz.get("findings"):
+            rows = [["Основен извод", biz.get("headline") or "", ""]]
+            rows += [[f.get("title"), f.get("text"), {"good": "добро", "bad": "лошо"}.get(f.get("tone"), "")]
+                     for f in biz["findings"]]
+            rows += [["Следваща стъпка", a, ""] for a in biz.get("actions") or []]
+            _sheet(wb, "Изводи", ["Какво", "Защо / числата", "Оценка"], rows, [34, 100, 10])
         _sheet(wb, "Сигнали", ["Страница", "Важност", "Какво"],
                [[s["page"], {"high": "висока", "medium": "средна"}.get(s["level"], s["level"]), s["text"]]
                 for s in ins.get("signals", [])] or [["—", "", "Няма сигнали"]], [34, 10, 80])
@@ -164,6 +186,30 @@ def write_excel(report: BrandReport, path: Path) -> None:
            ["Страница", "Ревю №", "Автор на ревюто", "Ревю (откъс)", "Автор на отговора", "От страницата", "Ниво",
             "Отговор", "Дата", "Тип", "Вид генериране", "Увереност", "Сигнали", "Обяснение от модела"],
            rows, [28, 7, 20, 45, 22, 11, 6, 60, 12, 13, 13, 10, 45, 40])
+
+    rows = []
+    for loc in every:
+        for i, p in enumerate(loc.posts, 1):
+            rows.append([label(loc), i, p.date_full, p.type, p.topic, p.text, p.photos, p.reactions, p.comments,
+                         p.shares, p.views, None if p.comments_list is None else len(p.comments_list), p.permalink])
+    if rows:
+        _sheet(wb, "Постове", ["Страница", "№", "Дата", "Вид", "Тема", "Текст", "Снимки", "Реакции", "Коментари",
+                               "Споделяния", "Гледания", "Прочетени коментари", "Линк"],
+               rows, [28, 5, 22, 9, 14, 70, 7, 9, 9, 9, 9, 10, 40])
+    rows = []
+    for loc in every:
+        for i, p in enumerate(loc.posts, 1):
+            for c in p.comments_list or []:
+                rows.append([label(loc), i, (p.text or "")[:120], c.author, c.text, c.date_text, c.depth,
+                             yn[c.is_page_reply], c.intent, c.sentiment])
+    if rows:
+        _sheet(wb, "Коментари", ["Страница", "Пост №", "Пост (откъс)", "Автор", "Коментар", "Дата", "Ниво",
+                                 "От страницата", "Намерение", "Тон"], rows, [28, 7, 40, 22, 60, 12, 6, 10, 12, 11])
+    rows = [[label(loc), a.started, a.status, a.creatives, a.advertiser, a.text, a.cta, a.link, a.library_id]
+            for loc in every for a in loc.ads]
+    if rows:
+        _sheet(wb, "Реклами", ["Страница", "Стартирана", "Състояние", "Криейтиви", "Рекламодател", "Текст", "Бутон",
+                               "Сайт", "ID в библиотеката"], rows, [28, 12, 10, 9, 22, 80, 16, 16, 18])
 
     s = dict(report.summary)
     rec, nrec = s.get("recommends") or 0, s.get("not_recommends") or 0

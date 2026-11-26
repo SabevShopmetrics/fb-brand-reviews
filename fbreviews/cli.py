@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--locations-file", type=Path, help="JSON списък с локации [{name,url}] — без търсене")
     sc.add_argument("--hint", help="подсказка за агента при търсенето, напр. 'официалната страница е ZARA'")
     sc.add_argument("--no-llm-classifier", action="store_true", help="само евристики при класификацията")
+    sc.add_argument("--no-posts", action="store_true", help="без постовете и коментарите под тях (само ревюта)")
     sc.add_argument("--lite", action="store_true",
                     help="лек режим: само публичните данни на страниците (%% препоръка, брой ревюта, адрес); "
                          "във вградения браузър на OpenWork, профил не е нужен")
@@ -135,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         run_dir = asyncio.run(pipeline.run(
             a.brand, s, out_dir=a.out, resume=a.resume, max_locations=a.max_locations, max_reviews=a.max_reviews,
-            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden, country=a.country,
+            locations_file=a.locations_file, hint=a.hint, use_llm_classifier=not a.no_llm_classifier, lite=a.lite, hidden=a.hidden, country=a.country, posts=not a.no_posts,
         ))
         print(f"\nОтчет: {run_dir / 'report.json'}\nExcel: {run_dir / 'report.xlsx'}\nHTML:  {run_dir / 'report.html'}"
               f"\nТабло: {run_dir.parent / 'index.html'}  (всички брандове досега, с табове)")

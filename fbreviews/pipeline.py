@@ -24,8 +24,8 @@ from .cdp_bridge import BridgeThread, facebook_logged_in
 from .classify import classify_replies
 from .config import Settings
 from .export import summarize, write_excel, write_json
-from .fburl import normalize_page_url, slug
-from .models import BrandReport, LocationPage, LocationResult, Reply, Review
+from .fburl import normalize_page_url, page_slug as fburl_slug, slug
+from .models import Ad, BrandReport, LocationPage, LocationResult, Post, PostComment, Reply, Review
 
 logger = logging.getLogger("fbreviews.pipeline")
 TRANSIENT = ("503", "502", "504", "429", "ModelUnavailable", "Service Unavailable", "overloaded", "rate limit",
@@ -123,10 +123,35 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
                                       review_total=int(rt) if isinstance(rt, (int, float)) else None,
                                       recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or ""),
-                                      is_brand=folder == "brand"))
+                                      is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", "")),
+                                      ads=[Ad(**{k: v for k, v in a.items() if k in Ad.model_fields})
+                                           for a in d.get("ads") or [] if isinstance(a, dict)]))
         except Exception as e:
             logger.warning("skipping %s: %s", f.name, e)
     out.sort(key=lambda r: order.get(r.location.url, 10**9))
+    return out
+
+
+def load_posts(ws: Path, url: str) -> list[Post]:
+    """posts/<slug>.json of one Page (Phase 3 / 4) → Post list; [] when the Page has none yet."""
+    f = ws / "posts" / f"{fburl_slug(url)}.json" if url else None
+    if not f or not f.exists():
+        return []
+    try:
+        raw = json.loads(f.read_text()).get("posts") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    out = []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        cl = p.get("comments_list")
+        comments = None if cl is None else [PostComment(**{k: v for k, v in c.items() if k in PostComment.model_fields})
+                                            for c in cl if isinstance(c, dict)]
+        fields = {k: v for k, v in p.items() if k in Post.model_fields and k != "comments_list"}
+        for k in ("comments", "shares", "photos"):
+            fields[k] = int(fields.get(k) or 0)
+        out.append(Post(**fields, comments_list=comments))
     return out
 
 
@@ -138,7 +163,37 @@ def progress_of(run_dir: Path) -> dict:
         locs = []
     done = len([f for f in (ws / "results").glob("*.json") if not f.stem.startswith("_")]) if (ws / "results").exists() else 0
     stop = (ws / "STOP").read_text() if (ws / "STOP").exists() else None
-    return {"locations": len(locs), "done": done, "stopped": stop}
+    return {"locations": len(locs), "done": done, "stopped": stop, **content_todo(ws)}
+
+
+CONTENT_STATUSES = ("ok", "partial", "no_reviews", "reviews_disabled", "summary_only")
+
+
+def content_todo(ws: Path) -> dict:
+    """Phase 3 / 4 work left: saved Pages without a posts file, posts with comments not read yet."""
+    pages = set()
+    for folder in ("brand", "results"):
+        for f in (ws / folder).glob("*.json") if (ws / folder).exists() else []:
+            if f.stem.startswith("_"):
+                continue
+            try:
+                d = json.loads(f.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(d, dict) and d.get("status") in CONTENT_STATUSES:
+                url = normalize_page_url((d.get("location") or {}).get("url", "")) or ""
+                if url:
+                    pages.add(fburl_slug(url))
+    have = {f.stem for f in (ws / "posts").glob("*.json")} if (ws / "posts").exists() else set()
+    comments = 0
+    for f in (ws / "posts").glob("*.json") if (ws / "posts").exists() else []:
+        try:
+            for p in json.loads(f.read_text()).get("posts", []):
+                if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
+                    comments += 1
+        except (OSError, ValueError, AttributeError):
+            continue
+    return {"posts_todo": len(pages - have), "comments_todo": comments}
 
 
 def dedupe_pages(brand_results: list[LocationResult], results: list[LocationResult]) -> list[LocationResult]:
@@ -156,7 +211,7 @@ def dedupe_pages(brand_results: list[LocationResult], results: list[LocationResu
         if owner or url in seen:
             who = f"на бранда „{owner.location.name}“" if owner else f"на „{seen[url]}“"
             r = r.model_copy(update={
-                "status": "no_own_page", "reviews": [], "review_total": None, "recommend_pct": None,
+                "status": "no_own_page", "reviews": [], "review_total": None, "recommend_pct": None, "posts": [], "ads": [],
                 "notes": f"няма собствена Facebook страница — ревютата са в страницата {who}"})
         else:
             seen[url] = r.location.name
@@ -172,11 +227,12 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
         llm = {"base_url": s.llm_base_url, "api_key": s.llm_api_key, "model": s.classifier_model}
     # brand Pages and locations are classified together: a template reply shared by both is one template
     method = await classify_replies(brand_results + results, brand, llm=llm)
-    from .insights import analyze_reviews, build_insights
+    from .insights import analyze_posts, analyze_reviews, build_insights, business_summary
 
-    try:  # what the reviews say (topics / tone): from the text only; never let it break the report
+    try:  # what the reviews and posts say: from the text only; never let it break the report
         imethod = await analyze_reviews(brand_results + results, llm=llm, cache_path=run_dir / "insights_cache.json")
-        insights = build_insights(brand_results, results, imethod)
+        cmethod = await analyze_posts(brand_results + results, llm=llm, cache_path=run_dir / "posts_cache.json")
+        insights = build_insights(brand_results, results, imethod, cmethod)
     except Exception as e:  # noqa: BLE001
         logger.warning("insights failed: %s", e)
         insights = {}
@@ -187,6 +243,15 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
                          brand_pages=sorted(set(meta.get("brand_pages", [])) | set(brand_urls)))
     report.summary = summarize(report)
     write_json(report, run_dir / "report.json")
+    if insights and llm:
+        try:  # what the numbers say about the business (model, cached by its input)
+            biz = await business_summary(json.loads((run_dir / "report.json").read_text()), llm=llm,
+                                         cache_path=run_dir / "summary_cache.json")
+            if biz:
+                report.insights = {**report.insights, "business": biz}
+                write_json(report, run_dir / "report.json")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("business summary failed: %s", e)
     write_excel(report, run_dir / "report.xlsx")
     from .html_report import write_html
 
@@ -198,6 +263,42 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
     except Exception as e:  # noqa: BLE001
         logger.warning("dashboard not rebuilt: %s", e)
     return report
+
+
+async def _content_rounds(run_dir, brand, s, llm, browser, ws, config, country, progress) -> None:
+    """Phase 3 / 4 after every location's reviews: the posts of each saved Page, then the comments under them.
+    Separate agent rounds with their own short task, so a long content phase never delays the reviews."""
+    idle = 0
+    for k in range(1, s.max_rounds + 1):
+        before = progress_of(run_dir)
+        if before["stopped"] or (not before["posts_todo"] and not before["comments_todo"]):
+            return
+        progress(f"Съдържание, рунд {k}: постове за {before['posts_todo']} страници, "
+                 f"коментари под {before['comments_todo']} поста…")
+        tail_stop = asyncio.Event()
+        tail = asyncio.create_task(_tail_progress(ws / "progress.log", tail_stop, progress))
+        try:
+            await run_agent(brand, s=s, llm=llm, browser=browser, workspace=ws, country=country, max_locations=0,
+                            hint=None, round_no=k, locations_given=True, config=config, phase="content")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("content round failed")
+            progress(f"   рундът за съдържание спря: {type(e).__name__}: {e}")
+        finally:
+            tail_stop.set()
+            await tail
+        after = progress_of(run_dir)
+        try:
+            await finalize(run_dir, brand, s, use_llm=False)
+            progress(f"   междинен отчет: {run_dir / 'report.html'}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("interim report failed: %s", e)
+        if (after["posts_todo"], after["comments_todo"]) == (before["posts_todo"], before["comments_todo"]):
+            idle += 1
+            if idle >= 3:
+                progress("   3 рунда без напредък в съдържанието — спирам и правя отчет.")
+                return
+        else:
+            idle = 0
 
 
 async def _tail_progress(path: Path, stop: asyncio.Event, progress) -> None:
@@ -236,6 +337,7 @@ async def run(
     hidden: bool = False,
     country: str | None = None,
     progress=print,
+    posts: bool = True,
 ) -> Path:
     from browser_use import Browser
 
@@ -278,7 +380,8 @@ async def run(
         max_locations = len(json.loads((ws / "locations.json").read_text()))
     config = {"pace_min_s": s.pace_min_s, "pace_max_s": s.pace_max_s, "daily_page_cap": s.daily_page_cap,
               "scroll_max_s": s.location_max_s,
-              "max_reviews": max_reviews, "max_locations": max_locations, "lite": lite}
+              "max_reviews": max_reviews, "max_locations": max_locations, "lite": lite,
+              "posts": posts, "post_comments": posts}
     progress(f"Папка: {run_dir}")
 
     bridge = None
@@ -362,6 +465,8 @@ async def run(
                 progress(f"   рундът не донесе напредък — опитвам отново ({idle_rounds}/3)…")
             else:
                 idle_rounds = 0
+        if not lite and not progress_of(run_dir)["stopped"] and posts:
+            await _content_rounds(run_dir, brand, s, llm, browser, ws, config, country, progress)
     finally:
         try:
             await browser.stop()

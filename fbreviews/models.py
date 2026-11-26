@@ -38,6 +38,9 @@ class LocationPage(BaseModel):
     name_changes: list[str] = Field(default_factory=list)
     ads_running: bool | None = None
     admin_countries: str | None = None    # where the people who manage the Page are
+    ads_active: int | None = None         # active ads in Meta's Ad Library
+    page_id: str | None = None
+    intro_locations: list[dict] = Field(default_factory=list)  # stores listed in the Page intro: {address, phone}
     rating_text: str | None = Field(default=None, description="e.g. '4.3 (120 reviews)' or '87% recommend' if shown")
     source: str | None = Field(default=None, description="Where it was found: locations_tab | search | map | other")
 
@@ -98,6 +101,43 @@ class Review(BaseModel):
     summary: str | None = None
 
 
+class PostComment(BaseModel):
+    author: str | None = None
+    text: str = ""
+    date_text: str | None = None
+    depth: int = 1
+    is_page_reply: bool = False
+    tags_only: bool = False               # only tagged friends / a sticker: reach, not an opinion
+    intent: str | None = None             # insights: question | praise | complaint | mention | other
+    sentiment: Literal["positive", "neutral", "negative"] | None = None
+
+
+class Post(BaseModel):
+    permalink: str | None = None
+    date_full: str | None = None
+    text: str = ""
+    type: str | None = None               # photo | album | video | reel | link | event | text
+    photos: int = 0
+    reactions: int | None = None
+    comments: int = 0
+    shares: int = 0
+    views: int | None = None
+    comments_list: list[PostComment] | None = None   # None = not opened yet
+    topic: str | None = None              # insights: promo | product | event | hiring | cause | holiday | brand | info | contest | other
+    summary: str | None = None
+
+
+class Ad(BaseModel):
+    library_id: str | None = None
+    status: str | None = None
+    started: str | None = None
+    creatives: int = 1
+    advertiser: str | None = None
+    text: str = ""
+    cta: str | None = None
+    link: str | None = None
+
+
 class LocationResult(BaseModel):
     location: LocationPage
     status: LocationStatus
@@ -107,6 +147,8 @@ class LocationResult(BaseModel):
     reviews: list[Review] = Field(default_factory=list)
     notes: str = ""
     is_brand: bool = False  # the brand's own Page (global / country), reported apart from the locations
+    posts: list[Post] = Field(default_factory=list)
+    ads: list[Ad] = Field(default_factory=list)
     scraped_at: str = Field(default_factory=now_iso)
 
     def stats(self) -> dict:

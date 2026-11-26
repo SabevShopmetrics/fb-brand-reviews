@@ -562,6 +562,19 @@ window.__fbx = (function () {
         break;
       }
     }
+    // new Page layout: "<intro lines>" "<category>" "<name again>" "Подробности" — and the intro often lists the
+    // stores with their phones (chains with one Page): keep those pairs
+    var nameAgain = name ? lines.findIndex(function (l, i) { return i > 0 && l.replace(/\s+/g, ' ').trim() === name; }) : -1;
+    if (!category && nameAgain > 1) {
+      var cc = lines[nameAgain - 1];
+      if (cc.length < 50 && !/\d|%|@/.test(cc) && !LABEL.test(cc)) { var pr2 = cc.match(/·\s*(\${1,4})\s*$/); if (pr2 && !price) price = pr2[1]; category = cc.replace(/\s*·.*$/, ''); catIdx = nameAgain - 1; }
+    }
+    var phoneRx = /^[+0(][\d\s()\-]{6,}$/;
+    var introLocs = [];
+    for (var q = 1; q < Math.min(lines.length, nameAgain > 0 ? nameAgain : 40); q++) {
+      if (phoneRx.test(lines[q]) && lines[q - 1] && !phoneRx.test(lines[q - 1]) && !LABEL.test(lines[q - 1]) && lines[q - 1].length < 120)
+        introLocs.push({ address: lines[q - 1], phone: lines[q] });
+    }
     var emailM = body.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/);
     var det = lines.findIndex(function (l) { return /^(подробности|details|intro|представяне|въведение)$/i.test(l); });
     // logged-out: "Intro/Въведение" → "Page · category" → address, phone, site;  logged-in: category in the header,
@@ -585,6 +598,7 @@ window.__fbx = (function () {
       var t = txt(art);
       first = { header: (t.split('\n')[0] || '').slice(0, 200), recommends: F.re.NEG.test(t.slice(0, 300)) ? false : (F.re.POS.test(t.slice(0, 300)) ? true : null), text: t.slice(0, 600) };
     }
+    if (!phone) { var ph = lines.slice(0, 40).filter(function (l) { return phoneRx.test(l); })[0]; if (ph) phone = ph; }
     // profile+: likes, blue badge, "typically replies within …", links to the brand's other networks
     var likes = body.match(/([\d.,]+\s*(хил\.|млн\.|[KkMm])?)\s*(харесвания|харесване|likes|like)(?![a-zа-я])/i);
     var badge = false;
@@ -606,6 +620,7 @@ window.__fbx = (function () {
     return {
       url: location.href.split('?')[0], name: name, category: category, address: address, phone: phone,
       website: website, hours: hours, followers: followers ? followers[1].trim() : null,
+      intro_locations: introLocs.slice(0, 50),
       likes: likes ? likes[1].trim() : null, verified: badge || null, response_badge: resp ? resp[1].trim() : null,
       instagram: ig, socials: socials.slice(0, 8),
       price: price, email: emailM ? emailM[0] : null,
@@ -676,7 +691,223 @@ window.__fbx = (function () {
     return out;
   }
 
-  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.transparency = transparency; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  // ---- the Page's own posts, the comments under one post, its ads in the Ad Library ------------------------------
+  var MONTH_RX = '(януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември|january|february|march|april|may|june|july|august|september|october|november|december)';
+  var POST_DATE = new RegExp('^((понеделник|вторник|сряда|четвъртък|петък|събота|неделя|monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\\s+)?(\\d{1,2}\\s+' + MONTH_RX + '|' + MONTH_RX + '\\s+\\d{1,2})[^\\n]{0,40}\\d{4}', 'i');
+  var num = function (s) {
+    if (s == null) return null;
+    var m = String(s).replace(/ /g, ' ').match(/([\d.,]+)\s*(хил\.|млн\.|[KkMm])?/);
+    if (!m) return null;
+    var v = parseFloat(m[1].replace(/\s/g, '').replace(',', '.'));
+    if (/хил|k/i.test(m[2] || '')) v *= 1000; else if (/млн|m/i.test(m[2] || '')) v *= 1000000;
+    return Math.round(v);
+  };
+  var cleanLink = function (h) { return (h || '').replace(/[?&]__cft__\[0\]=[^&]*/g, '').replace(/[?&]__tn__=[^&]*/g, '').replace(/\?$/, ''); };
+
+  // top-level posts of the Page timeline (never the account's own news feed: only [role=main] of a Page)
+  function pagePostEls() {
+    var main = document.querySelector('[role="main"]');
+    if (!main) return [];
+    return Array.prototype.filter.call(main.querySelectorAll('[role="article"]'), function (a) {
+      return !(a.parentElement && a.parentElement.closest('[role="article"]')) && !F.isCommentEl(a);
+    });
+  }
+
+  function parsePagePost(A) {
+    var t = txt(A); if (!t) return null;
+    var lines = t.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var links = Array.prototype.map.call(A.querySelectorAll('a[href]'), function (a) { return a.href; });
+    var perma = links.filter(function (h) { return /\/posts\/|story_fbid=|\/permalink\//.test(h) && !/comment_id=/.test(h); })[0] ||
+                links.filter(function (h) { return /\/videos\/|\/reel\//.test(h); })[0] ||
+                links.filter(function (h) { return /\/photo\/?\?fbid=|\/photos\//.test(h); })[0] || null;
+    var labels = Array.prototype.map.call(A.querySelectorAll('[aria-label]'), function (x) { return x.getAttribute('aria-label') || ''; });
+    var lab = function (rx) { for (var i = 0; i < labels.length; i++) { var m = labels[i].match(rx); if (m) return num(m[1]); } return null; };
+    var dIdx = lines.findIndex(function (l) { return POST_DATE.test(l); });
+    var date_full = dIdx >= 0 ? lines[dIdx] : null;
+    // text: after the "·" that follows the date stamps, up to the counters
+    var start = dIdx >= 0 ? dIdx + 1 : 1;
+    var shortDate = new RegExp('^(\\d{1,2}\\s+' + MONTH_RX + '|' + MONTH_RX + '\\s+\\d{1,2})(\\s+(в|at)\\s+\\d{1,2}:\\d{2})?(\\s*г\\.)?$', 'i');
+    while (start < lines.length && (/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|·|преди .+|just now|току-що|вчера.*|yesterday.*)$/i.test(lines[start]) || shortDate.test(lines[start]) || lines[start].length <= 2)) start++;
+    var body = [];
+    for (var j = start; j < lines.length; j++) {
+      var l = lines[j];
+      if (/^[\d.,]+\s*(хил\.|млн\.|[KkMm])?$/.test(l) || /^(харесване|коментар|споделяне|like|comment|share|всички реакции|all reactions|преглед на още коментари|view more comments|най-подходящи|most relevant|коментиране като|comment as)/i.test(l)) break;
+      body.push(l);
+    }
+    var text = body.join('\n').replace(/\s*(\.\.\.|…)?\s*(вижте повече|see more)\s*$/i, '').replace(/\s*(вижте по-малко|see less)\s*$/i, '').trim();
+    var head = lines.slice(0, Math.max(dIdx, 0) + 1).join(' ');
+    var photos = links.filter(function (h) { return /\/photo\/?\?fbid=|\/photos\//.test(h); }).length;
+    var type = /\/reel\//.test(links.join(' ')) ? 'reel' : /\/videos\//.test(links.join(' ')) ? 'video' :
+               photos > 1 ? 'album' : photos ? 'photo' :
+               /събитие|event/i.test(head) ? 'event' : links.some(function (h) { return /l\.facebook\.com\/l\.php/.test(h); }) ? 'link' : 'text';
+    var reactions = lab(/^(?:харесване|всички реакции|like|all reactions)[:\s]+([\d.,]+\s*(?:хил\.|млн\.|[KkMm])?)/i);
+    if (reactions == null) { var rl = lines.filter(function (l) { return /^[\d.,]+\s*(хил\.|млн\.|[KkMm])?$/.test(l); })[0]; reactions = rl ? num(rl) : null; }
+    return {
+      permalink: perma ? cleanLink(perma) : null, date_full: date_full, text: text, type: type, photos: photos,
+      reactions: reactions,
+      comments: lab(/,\s*([\d.,]+\s*(?:хил\.|млн\.|[KkMm])?)\s*(коментар|comment)/i) || 0,
+      shares: lab(/,\s*([\d.,]+\s*(?:хил\.|млн\.|[KkMm])?)\s*(споделян|share)/i) || 0,
+      views: num((t.match(/([\d.,]+\s*(хил\.|млн\.|[KkMm])?)\s*(гледания|показвания|views|plays)/i) || [])[0]),
+      header: head.slice(0, 200)
+    };
+  }
+
+  function postKey(p) {
+    var path = (p.permalink || '').replace(/^https?:\/\/[^/]+/, '');
+    var id = (path.match(/pfbid\w+|story_fbid=\d+|\/(posts|videos|reel)\/\d+|fbid=\d+/) || [])[0];
+    return id || ((p.date_full || '') + '|' + (p.text || '').slice(0, 40));
+  }
+
+  function accumulatePosts() {
+    var acc = window.__fbxPosts || (window.__fbxPosts = { order: [], map: {} });
+    pagePostEls().forEach(function (A) {
+      var p; try { p = parsePagePost(A); } catch (e) { return; }
+      if (!p || (!p.text && !p.permalink && !p.date_full)) return;
+      var k = postKey(p), old = acc.map[k];
+      if (!old) { acc.order.push(k); acc.map[k] = p; return; }
+      if ((p.text || '').length > (old.text || '').length) old.text = p.text;
+      ['reactions', 'comments', 'shares', 'views'].forEach(function (f) { if ((p[f] || 0) > (old[f] || 0)) old[f] = p[f]; });
+    });
+    return acc;
+  }
+
+  // Scroll the Page timeline, collecting posts as they pass (Facebook empties posts far above the viewport).
+  // opts: steps, delayMs, maxPosts, since ('YYYY-MM-DD': stop once posts are older)
+  async function scrollPosts(opts) {
+    opts = opts || {};
+    var steps = opts.steps || 8, delay = opts.delayMs || 1100, max = opts.maxPosts || 100000;
+    var st = window.__fbxPostState || (window.__fbxPostState = { last: 0, stable: 0, lastNewAt: Date.now() });
+    var reason = null, acc;
+    for (var i = 0; i < steps; i++) {
+      if (F.clickExpanders()) await sleep(600);
+      acc = accumulatePosts();
+      var els = pagePostEls(), lastEl = els[els.length - 1];
+      if (lastEl) lastEl.scrollIntoView({ block: 'center' });
+      window.scrollBy(0, Math.round(window.innerHeight * 0.85));
+      await sleep(delay);
+      acc = accumulatePosts();
+      var c = acc.order.length;
+      if (c !== st.last) { st.last = c; st.stable = 0; st.lastNewAt = Date.now(); } else st.stable++;
+      if (c >= max) { reason = 'reached_max'; break; }
+      if (opts.since) {
+        var oldest = acc.order.map(function (k) { return acc.map[k].date_full; }).filter(Boolean).slice(-1)[0];
+        if (oldest && F.dateIso && F.dateIso(oldest) && F.dateIso(oldest) < opts.since) { reason = 'reached_since'; break; }
+      }
+      if (st.stable >= 6 && Date.now() - st.lastNewAt > 12000) {
+        window.scrollTo(0, document.documentElement.scrollHeight); await sleep(delay * 2);
+        if (accumulatePosts().order.length === c) { reason = 'no_more'; break; }
+      }
+    }
+    acc = accumulatePosts();
+    return { count: acc.order.length, done: !!reason, reason: reason, stable: st.stable };
+  }
+
+  function collectedPosts() { var acc = accumulatePosts(); return acc.order.map(function (k) { return acc.map[k]; }); }
+
+  function dateIso(s) {
+    var m = String(s || '').toLowerCase().match(new RegExp('(\\d{1,2})\\s+' + MONTH_RX + '\\s*,?\\s*(\\d{4})?'));
+    var months = ['януари','февруари','март','април','май','юни','юли','август','септември','октомври','ноември','декември'];
+    var en = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    if (m) { var mi = months.indexOf(m[2]); if (mi < 0) mi = en.indexOf(m[2]); var y = m[3] || new Date().getFullYear();
+      return y + '-' + String(mi + 1).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0'); }
+    return null;
+  }
+
+  // The comments of the open post (permalink → Facebook shows it in a dialog over the feed: read ONLY that dialog).
+  function postDialog() {
+    var ds = Array.prototype.filter.call(document.querySelectorAll('[role="dialog"]'), function (d) {
+      return d.querySelector('[role="article"][aria-label]') || /^(публикацията на|post by|.+'s post)/i.test(txt(d).slice(0, 80));
+    });
+    return ds[ds.length - 1] || null;
+  }
+
+  async function expandComments(opts) {
+    opts = opts || {};
+    var root = postDialog() || document.querySelector('[role="main"]');
+    if (!root) return { clicked: 0 };
+    var clicked = 0, rounds = opts.rounds || 6;
+    for (var r = 0; r < rounds; r++) {
+      var n = 0;
+      Array.prototype.forEach.call(root.querySelectorAll('div[role="button"], span[role="button"]'), function (b) {
+        var t = txt(b);
+        if (t && t.length < 60 && /^(вижте още коментари|преглед на още коментари|view more comments|вижте всички \d+ отговора|вижте \d+ отговор|преглед на \d+ отговор|view \d+ repl|view all \d+ repl|\d+ отговора|\d+ replies|вижте повече|see more)/i.test(t)) {
+          try { b.click(); n++; } catch (e) {}
+        }
+      });
+      clicked += n;
+      if (!n) break;
+      await sleep(opts.delayMs || 1200);
+    }
+    return { clicked: clicked };
+  }
+
+  function postComments(pageName) {
+    var root = postDialog() || document.querySelector('[role="main"]');
+    if (!root) return { found: false, comments: [] };
+    var out = [], seen = {};
+    Array.prototype.forEach.call(root.querySelectorAll('[role="article"][aria-label]'), function (a) {
+      var label = a.getAttribute('aria-label') || '';
+      var m = label.match(/^(коментар|отговор|comment|reply)\s+(от|by)\s+(.+?)\s+((преди|before|\d).*|току-що|just now)?$/i);
+      if (!m) return;
+      var author = m[3].trim(), when = (m[4] || '').trim();
+      var lines = txt(a).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+      var body = lines.filter(function (l, i) {
+        return !(i === 0 && l === author) && l !== '·' && !/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|отговор|харесване|reply|like|редактирано|edited|автор|author|най-активен фен|top fan|\d+)$/i.test(l) && !/^·?\s*\d+\s*(мин|ч|д|сед|г)/.test(l);
+      });
+      var text = body.join('\n').replace(/(харесване|отговор|like|reply)+$/i, '').trim();
+      var k = author + '|' + when + '|' + text.slice(0, 80);
+      if (seen[k]) return; seen[k] = 1;
+      var depth = /^(отговор|reply)/i.test(m[1]) || a.parentElement.closest('[role="article"][aria-label]') ? 2 : 1;
+      var tagsOnly = text && text.split(/\s{2,}|\n/).every(function (s) { return /^[A-ZА-Я][\p{L}'.-]+(\s+[A-ZА-Я][\p{L}'.-]+){0,3}$/u.test(s.trim()) || !s.trim(); });
+      out.push({ author: author, text: text, date_text: when, depth: depth,
+                 is_page_reply: !!pageName && author.toLowerCase() === String(pageName).toLowerCase(), tags_only: !!tagsOnly });
+    });
+    return { found: !!root, comments: out };
+  }
+
+  // Ad Library: one Page's active ads (the URL with view_all_page_id), or nothing.
+  function pageId() {
+    var m = location.href.match(/[?&]id=(\d+)/);
+    if (m) return m[1];
+    var h = document.documentElement.innerHTML;
+    m = h.match(/"pageID":"(\d+)"/) || h.match(/"page_id":"(\d+)"/) || h.match(/"userID":"(\d{8,})"/);
+    return m ? m[1] : null;
+  }
+
+  function adsLibrary() {
+    var lines = txt(document.body).split('\n').map(function (l) { return l.replace(/​/g, '').trim(); }).filter(Boolean);
+    if (lines.some(function (l) { return /^(няма реклами, отговарящи|no ads match)/i.test(l); })) return { total: 0, ads: [] };
+    var totalLine = lines.filter(function (l) { return /^~?\s*[\d\s.,]+\s*(резултат|results?)/i.test(l); })[0];
+    var total = totalLine ? num(totalLine.replace(/^~/, '')) : null;
+    var ads = [];
+    for (var i = 0; i < lines.length; i++) {
+      var idm = lines[i].match(/^(идентификатор на библиотеката|library id):\s*(\d+)/i);
+      if (!idm) continue;
+      var ad = { library_id: idm[2], status: /^(активна|active)$/i.test(lines[i - 1] || '') ? 'active' : (lines[i - 1] || '').toLowerCase(),
+                 started: null, creatives: 1, advertiser: null, text: '', cta: null, link: null };
+      var j = i + 1;
+      for (; j < Math.min(lines.length, i + 12); j++) {
+        var l = lines[j];
+        var sm = l.match(/(стартирана е на|started running on)\s+(.+?)\s*(г\.)?$/i); if (sm) { ad.started = sm[2]; continue; }
+        var cm = l.match(/^(\d+)\s+(реклами|ads)\s+(използва|use)/i); if (cm) { ad.creatives = parseInt(cm[1], 10); continue; }
+        if (/^(спонсорирано|sponsored)$/i.test(l)) { ad.advertiser = lines[j - 1]; j++; break; }
+      }
+      var body = [];
+      for (; j < lines.length; j++) {
+        var b = lines[j];
+        if (/^(активна|неактивна|active|inactive)$/i.test(b) && /^(идентификатор|library id)/i.test(lines[j + 1] || '')) break;
+        if (/^(learn more|научете повече|shop now|пазарувайте|sign up|регистрация|book now|резервирайте|send message|изпращане на съобщение|order now|поръчайте|call now|обадете се|get offer|вземете оферта|see menu|вижте менюто|watch more|гледайте още|download|изтегляне|apply now|кандидатствайте)$/i.test(b)) { ad.cta = ad.cta || b; continue; }
+        if (/^[A-Z0-9.-]+\.[A-Z]{2,}$/.test(b)) { ad.link = ad.link || b.toLowerCase(); continue; }
+        body.push(b);
+      }
+      ad.text = body.join('\n').slice(0, 1500);
+      ads.push(ad);
+      i = j - 1;
+    }
+    return { total: total != null ? total : ads.length, ads: ads };
+  }
+
+  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.transparency = transparency; F.parsePagePost = parsePagePost; F.pagePostEls = pagePostEls; F.scrollPosts = scrollPosts; F.collectedPosts = collectedPosts; F.dateIso = dateIso; F.postDialog = postDialog; F.expandComments = expandComments; F.postComments = postComments; F.pageId = pageId; F.adsLibrary = adsLibrary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal; F.recommendPct = recommendPct;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

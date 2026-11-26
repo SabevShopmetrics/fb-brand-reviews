@@ -273,9 +273,15 @@ def fb_js(expression):
 SEARCH_IDLE_LIMIT = int(_CFG.get("search_idle_limit", 3))
 # Page fields read from the header (no extra page load) and from the transparency tab (one extra paced page)
 PAGE_KEYS = ("category", "followers", "price", "website", "phone", "address", "email", "hours", "likes", "verified",
-             "response_badge", "instagram", "socials")
-DETAIL_KEYS = ("created", "name_changes", "ads_running", "admin_countries")
-PAGE_DETAILS = bool(_CFG.get("page_details", True))
+             "response_badge", "instagram", "socials", "intro_locations")
+DETAIL_KEYS = ("created", "name_changes", "ads_running", "admin_countries", "ads_active", "page_id")
+PAGE_DETAILS = bool(_CFG.get("page_details", True))   # the Page's ads in the Ad Library (one extra page)
+ADS = bool(_CFG.get("ads", True))
+POSTS = bool(_CFG.get("posts", True))                  # the Pages' posts (Phase 3) …
+POST_COMMENTS = bool(_CFG.get("post_comments", True))  # … and the comments under them (Phase 4)
+MAX_POSTS = int(_CFG.get("max_posts", 100000))         # 100000 = all
+POSTS_SINCE = _CFG.get("posts_since")                  # 'YYYY-MM-DD' = only posts since then; None = all
+CONTENT_BUDGET_S = int(_CFG.get("content_budget_s", 2400))  # one helper call returns after this; call it again
 # with NO location found yet the 3-search rule does not apply (don't give up before the first find), but this cap
 # does: many brands (e.g. one restaurant chain with a single Page) have no Page per location at all
 SEARCH_EMPTY_LIMIT = int(_CFG.get("search_empty_limit", 6))
@@ -389,9 +395,11 @@ def fb_extract_reviews(url, max_reviews=None, name=None, location=None, save=Tru
     misreads the page, see preflight.md): repair, then extract that location again."""
     res = _extract_reviews(url, max_reviews=max_reviews, name=name)
     if res.get("status") in ("ok", "partial", "no_reviews", "reviews_disabled"):
-        det = _page_details(url)
+        diag = res.setdefault("diagnostics", {})
+        det = _page_details(url, diag.get("page_id"))
         if det:
-            res.setdefault("diagnostics", {}).setdefault("page", {}).update(det)
+            diag["ads"] = det.pop("ads", None)
+            diag["page"] = {**(diag.get("page") or {}), **det}
     if save and res.get("status") not in ("login_required", "blocked", "stopped", "cap_reached", "unknown", "suspect"):
         res["saved"] = fb_save_result(location or {"url": url, "name": name}, res)
     return res
@@ -414,6 +422,10 @@ def _extract_reviews(url, max_reviews=None, name=None):
         return {"status": r.get("state", "unknown"), "reviews_url": rurl, "reviews": [], "notes": r.get("reason", "")}
     opts = {"pageName": name or "", "maxReviews": max_reviews, "steps": 4, "delayMs": 900}
     reviews, diag = _collect(opts)
+    try:
+        diag["page_id"] = _run("__fbx.pageId()")
+    except Exception:
+        pass
     try:  # the Page header on the same tab (no extra page load): category, followers, price, % recommend
         head = _run("__fbx.pageSummary()") or {}
         diag["page"] = {k: head.get(k) for k in ("name",) + PAGE_KEYS if head.get(k)}
@@ -600,6 +612,9 @@ def fb_save_result(location, result, notes="", folder="results"):
         rp = (result.get("diagnostics") or {}).get("recommend_pct")   # "80% препоръка" on the reviews tab
     if rp is not None:
         out["recommend_pct"] = rp
+    ads = (result.get("diagnostics") or {}).get("ads")
+    if ads is not None:
+        out["ads"] = ads
     _write(f"{folder}/{fb_slug(url)}.json", out)
     _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: "
          f"{out['status']}, {len(out['reviews'])} ревюта")
@@ -621,7 +636,8 @@ def fb_progress():
             "brand_pages": len(brands), "brand_todo": [b for b in brands if fb_slug(b["url"]) not in bdone],
             "preflight": {"healthy": pf.get("healthy"), "at": pf.get("at"), "failed": pf.get("failed", []),
                           "due": (not LITE) and _preflight_due(pf), "unhealthy_streak": pf.get("unhealthy_streak", 0)},
-            "override_active": bool(_override_src().strip())}
+            "override_active": bool(_override_src().strip()),
+            "posts_todo": _posts_todo(), "comments_todo": _comments_todo()}
 
 
 # ------------------------------------------------------------------ preflight / self-repair
@@ -1002,30 +1018,44 @@ def fb_web_search(query, pages=1):
     return out
 
 
-def _page_details(url):
-    """The Page's transparency tab: {created, name_changes, ads_running, admin_countries} (only what is shown).
-    One extra page load with the usual pacing; nothing (and no stop) if the tab is missing."""
-    if not PAGE_DETAILS or fb_stopped():
+def _page_details(url, page_id=None):
+    """The Page's active ads in Meta's Ad Library (public, no login): {ads_running, ads_active, ads: [...]}.
+    ("Page transparency" — creation date, name changes — is no longer shown on Pages, 2026.) One extra paced page;
+    nothing, and never a stop, when the Page id is unknown or the library does not answer."""
+    if not (PAGE_DETAILS and ADS) or fb_stopped():
         return {}
     page = fb_page_url(url) or url
-    tab = page + ("&sk=about_profile_transparency" if "profile.php" in page else "/about_profile_transparency")
-    r = fb_open(tab)
+    pid = page_id or (re.search(r"[?&]id=(\d+)", page) or [None, None])[1]
+    if not pid:
+        try:
+            pid = _run("__fbx.pageId()")
+        except Exception:
+            pid = None
+    if not pid:
+        return {}
+    lib = ("https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL"
+           f"&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id={pid}")
+    r = fb_open(lib)
     if not isinstance(r, dict) or not r.get("ok"):
         return {}
-    d = {}
-    for _ in range(4):  # the tab renders late
-        d = _run("__fbx.transparency()")
-        d = d if isinstance(d, dict) else {}
-        if d.get("found"):
-            break
+    res, seen = {}, -1
+    for _ in range(12):  # the library loads cards as you scroll
         time.sleep(2)
-    out = {k: d.get(k) for k in DETAIL_KEYS if d.get(k) not in (None, "", [])}
-    if out:
-        bits = [f"създадена {out['created']}" if out.get("created") else "",
-                f"{len(out['name_changes'])} смени на името" if out.get("name_changes") else "",
-                {True: "пуска реклами", False: "без реклами"}.get(out.get("ads_running"), "")]
-        _say("  прозрачност: " + ", ".join(b for b in bits if b))
-    return out
+        res = _run("__fbx.adsLibrary()")
+        res = res if isinstance(res, dict) else {}
+        n = len(res.get("ads") or [])
+        if res.get("total") == 0 or n == seen or n >= 200:
+            break
+        seen = n
+        try:
+            _h().js("window.scrollTo(0, document.documentElement.scrollHeight)")
+        except Exception:
+            break
+    total = res.get("total")
+    if total is None:
+        return {}
+    _say(f"  реклами в Ad Library: {total} активни" if total else "  реклами в Ad Library: няма активни")
+    return {"page_id": pid, "ads_running": bool(total), "ads_active": total, "ads": (res.get("ads") or [])[:200]}
 
 
 def fb_page_summary(url):
@@ -1044,7 +1074,13 @@ def fb_page_summary(url):
         time.sleep(2)
     s["state"] = "ok"
     s["url"] = page
-    s.update(_page_details(page))
+    try:
+        s["page_id"] = _h().js(_bundle("__fbx.pageId()"))
+    except Exception:
+        pass
+    det = _page_details(page, s.get("page_id"))
+    s["ads"] = det.pop("ads", None)
+    s.update(det)
     rec = (f"{s['recommend_pct']}% препоръка, {s.get('review_total')} ревюта" if s.get("recommend_pct") is not None
            else "без препоръки/ревюта")
     _say(f"  публични данни: {s.get('name') or _short(page)} — {rec}, {s.get('address') or 'без адрес'}")
@@ -1072,6 +1108,8 @@ def fb_save_summary(location, summary, folder="results"):
            "review_total": summary.get("review_total"), "recommend_pct": summary.get("recommend_pct"),
            "notes": ("публични данни без вход (лек режим)" if LITE else "публични данни; страницата няма ревюта/препоръки")
                     + (f"; {summary.get('reason')}" if summary.get("reason") else "")}
+    if summary.get("ads") is not None:
+        out["ads"] = summary["ads"]
     _write(f"{folder}/{fb_slug(url)}.json", out)
     _say(f"✓ Записах {'бранда' if folder == 'brand' else 'локацията'} {loc.get('name') or _short(url)}: {status}")
     return {"saved": f"{folder}/{fb_slug(url)}.json", "status": status, "recommend_pct": summary.get("recommend_pct"),
@@ -1132,5 +1170,122 @@ def fb_extract_brand(url, name=None, max_reviews=None):
     res["recommend_pct"] = summary.get("recommend_pct")
     diag = dict(res.get("diagnostics") or {})
     diag["review_total"] = diag.get("review_total") or summary.get("review_total")
+    if summary.get("ads") is not None:
+        diag["ads"] = summary["ads"]
     res["diagnostics"] = diag
     return fb_save_result(loc, res, folder="brand")
+
+
+# ------------------------------------------------------------------ Phase 3 / 4: the Pages' posts and their comments
+CONTENT_STATUSES = ("ok", "partial", "no_reviews", "reviews_disabled", "summary_only")
+
+
+def _saved_pages():
+    """Every saved Page (brand first, then locations) that has a Page of its own: [{name, url, folder}]."""
+    out, seen = [], set()
+    for folder in ("brand", "results"):
+        d = _WS / folder
+        for f in sorted(d.glob("*.json")) if d.exists() else []:
+            if f.stem.startswith("_"):
+                continue
+            r = _read(f"{folder}/{f.name}", {})
+            if not isinstance(r, dict) or r.get("status") not in CONTENT_STATUSES:
+                continue
+            loc = r.get("location") or {}
+            url = fb_page_url(loc.get("url", "")) or loc.get("url")
+            if url and url not in seen:
+                seen.add(url)
+                out.append({"name": loc.get("name") or _short(url), "url": url, "folder": folder})
+    return out
+
+
+def _posts_todo():
+    if LITE or not POSTS:
+        return []
+    return [p for p in _saved_pages() if not (_WS / "posts" / f"{fb_slug(p['url'])}.json").exists()]
+
+
+def _comments_todo():
+    if LITE or not POSTS or not POST_COMMENTS:
+        return 0
+    n = 0
+    for f in sorted((_WS / "posts").glob("*.json")) if (_WS / "posts").exists() else []:
+        for p in (_read(f"posts/{f.name}", {}) or {}).get("posts", []):
+            if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
+                n += 1
+    return n
+
+
+def fb_extract_posts(url, name=None):
+    """Phase 3. All posts of one Page (its timeline): date, text, type (photo / album / video / reel / link / text),
+    photos, reactions, comments, shares, views, permalink → posts/<slug>.json. Paced like everything else; returns
+    {status, posts} or the stop state."""
+    page = fb_page_url(url) or url
+    _say(f"Постове: {name or _short(page)} — отварям страницата")
+    r = fb_open(page)
+    if not isinstance(r, dict) or not r.get("ok"):
+        return {"status": (r or {}).get("state", "unknown"), "posts": 0}
+    opts = {"steps": 6, "delayMs": 1100, "maxPosts": MAX_POSTS, "since": POSTS_SINCE}
+    deadline, last, st = time.time() + SCROLL_MAX_S, -1, {}
+    while time.time() < deadline:
+        st = _run("__fbx.scrollPosts(" + json.dumps(opts) + ")")
+        if not isinstance(st, dict):
+            st = {}
+            break
+        if st.get("count") != last:
+            last = st.get("count")
+            _say(f"  вадя постове: {last}")
+        if st.get("done"):
+            break
+    posts = _run("__fbx.collectedPosts()") or []
+    posts = posts if isinstance(posts, list) else []
+    pid = None
+    try:
+        pid = _run("__fbx.pageId()")
+    except Exception:
+        pass
+    _write(f"posts/{fb_slug(page)}.json", {"url": page, "name": name, "page_id": pid, "posts": posts,
+                                         "reason": st.get("reason") or "time_limit", "at": time.time()})
+    with_c = sum(1 for p in posts if (p.get("comments") or 0) > 0)
+    _say(f"✓ Постове на {name or _short(page)}: {len(posts)} ({with_c} с коментари)")
+    return {"status": "ok", "posts": len(posts), "with_comments": with_c}
+
+
+def fb_extract_comments(budget_s=None):
+    """Phase 4. Opens every saved post that has comments (newest first, across all Pages) and reads its comments
+    (author, text, date, reply level, the Page's own replies). Saves after every post, so it continues where it
+    stopped. Works for `budget_s` seconds, then returns {done: False, left}: call it again until done is True."""
+    t0, opened = time.time(), 0
+    budget = budget_s or CONTENT_BUDGET_S
+    names = {p["url"]: p["name"] for p in _saved_pages()}
+    queue = []
+    for f in sorted((_WS / "posts").glob("*.json")) if (_WS / "posts").exists() else []:
+        data = _read(f"posts/{f.name}", {}) or {}
+        for i, p in enumerate(data.get("posts", [])):
+            if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
+                queue.append((f.name, i, p.get("date_full") or "", data.get("name") or names.get(data.get("url"), "")))
+    total = len(queue)
+    for k, (fname, i, _, page_name) in enumerate(queue, 1):
+        if time.time() - t0 > budget:
+            return {"done": False, "opened": opened, "left": total - k + 1}
+        data = _read(f"posts/{fname}", {}) or {}
+        p = data["posts"][i]
+        _say(f"Коментари: пост {k}/{total} на {page_name or fname} ({p.get('comments')} коментара)")
+        r = fb_open(p["permalink"])
+        if not isinstance(r, dict) or r.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
+            return {"done": False, "stopped": (r or {}).get("state"), "opened": opened, "left": total - k + 1}
+        opened += 1
+        if not r.get("ok"):
+            p["comments_list"] = []
+            p["comments_error"] = r.get("state")
+        else:
+            time.sleep(2)
+            try:
+                _run("__fbx.expandComments({})")
+                c = _run("__fbx.postComments(" + json.dumps(page_name) + ")")
+            except Exception as e:
+                c = {"comments": [], "error": str(e)[:200]}
+            p["comments_list"] = (c or {}).get("comments", []) if isinstance(c, dict) else []
+        data["posts"][i] = p
+        _write(f"posts/{fname}", data)
+    return {"done": True, "opened": opened, "left": 0}

@@ -95,8 +95,8 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 <header class="top">
   <div class="wrap topin"><div class="logo"><i>FB</i><span>Facebook ревюта</span></div><nav class="tabs" id="tabs"></nav></div>
   <div class="wrap secnav" id="secnav">
-    <a href="#sec-top">Обзор</a><a href="#sec-countries" id="navCountries">Държави</a><a href="#sec-brand">Бранд</a>
-    <a href="#sec-locs">Локации</a><a href="#sec-topics" id="navTopics">Теми</a><a href="#sec-reply" id="navReply">Отговаряне</a><a href="#sec-charts">Графики</a><a href="#sec-reviews">Ревюта</a>
+    <a href="#sec-top">Обзор</a><a href="#sec-biz" id="navBiz">Изводи</a><a href="#sec-countries" id="navCountries">Държави</a><a href="#sec-brand">Бранд</a>
+    <a href="#sec-locs">Локации</a><a href="#sec-rtime" id="navRtime">Ревюта</a><a href="#sec-topics" id="navTopics">Добро / лошо</a><a href="#sec-reply" id="navReply">Отговаряне</a><a href="#sec-content" id="navContent">Постове</a><a href="#sec-comments" id="navComments">Коментари</a><a href="#sec-ads" id="navAds">Реклами</a><a href="#sec-charts">Графики</a><a href="#sec-reviews">Всички ревюта</a>
   </div>
 </header>
 
@@ -110,6 +110,11 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 
 <main class="wrap" id="brandview">
   <div class="hero" id="sec-top"><h1 id="title"></h1><div class="sub" id="subtitle"></div><div class="chips" id="chips"></div></div>
+  <section id="sec-biz" hidden><h2>Какво казват данните за бизнеса <small>изводи от модела, само от числата отдолу</small></h2>
+    <div class="card" id="bizHead" style="font-size:16px;font-weight:600"></div>
+    <div class="grid two" id="bizFind" style="margin-top:12px"></div>
+    <div class="card" id="bizAct" style="margin-top:12px"></div>
+  </section>
   <div class="grid kpis" id="kpis"></div>
 
   <section id="sec-countries">
@@ -122,6 +127,14 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
 
   <section id="sec-locs"><h2>Локации — сравнение <small id="locHint"></small></h2>
     <div class="card tablewrap"><table id="loctable"></table></div></section>
+
+  <section id="sec-rtime"><h2>Колко често и как пишат ревюта <small>по месеци, последните 24</small></h2>
+    <div class="grid two">
+      <div class="card"><h3>Ревюта по месеци</h3><div id="chartRevMonths"></div>
+        <div class="legend"><span><i style="background:var(--pos)"></i>препоръчват</span><span><i style="background:var(--neg)"></i>не препоръчват</span></div></div>
+      <div class="card"><h3>Какви са ревютата</h3><div id="revMix"></div></div>
+    </div>
+  </section>
 
   <section id="sec-topics"><h2>За какво пишат клиентите <small id="topicsHint"></small></h2>
     <div class="grid" id="signals" style="margin-bottom:12px"></div>
@@ -136,6 +149,31 @@ svg text{fill:var(--muted);font-size:11px}.legend{display:flex;gap:12px;color:va
   <section id="sec-reply"><h2>Как отговаря брандът <small>отговори от страницата под ревютата</small></h2>
     <div class="card tablewrap"><table id="replyTable"></table></div>
     <div class="small" style="margin-top:6px">Времето за отговор е приблизително: Facebook показва датата на отговора само като „преди 3 д.“ / „1 сед.“; отговорите с дата „1 г.“ не се мерят.</div>
+  </section>
+
+  <section id="sec-content" hidden><h2>Какво публикува брандът <small>постове на страниците — ритъм, вид, теми, какво работи</small></h2>
+    <div class="grid kpis" id="contentKpis" style="margin-top:0"></div>
+    <div class="grid two" style="margin-top:12px">
+      <div class="card"><h3>Постове по месеци</h3><div id="chartPostMonths"></div></div>
+      <div class="card"><h3>Какво качват и какво работи</h3><div id="chartTopicsPosts"></div>
+        <div class="small">дължината = брой постове; числото вдясно = средна ангажираност (реакции + коментари + споделяния) на пост</div></div>
+    </div>
+    <div class="grid two" style="margin-top:12px">
+      <div class="card"><h3>По вид</h3><div id="chartTypes"></div></div>
+      <div class="card"><h3>Най-силните постове</h3><div id="topPosts"></div></div>
+    </div>
+    <div class="card tablewrap" style="margin-top:12px"><table id="contentTable"></table></div>
+  </section>
+
+  <section id="sec-comments" hidden><h2>Какво пишат хората под постовете</h2>
+    <div class="grid two">
+      <div class="card"><h3>Намерения в коментарите</h3><div id="chartIntents"></div><div id="qAnswered" class="small" style="margin-top:8px"></div></div>
+      <div class="card"><h3>Въпроси и оплаквания</h3><div id="commentSamples"></div></div>
+    </div>
+  </section>
+
+  <section id="sec-ads" hidden><h2>Реклами <small>активните в Meta Ad Library към датата на пускането</small></h2>
+    <div class="grid two" id="adsList"></div>
   </section>
 
   <section id="sec-charts"><h2>Графики</h2>
@@ -201,6 +239,7 @@ function methodBg(m) {
 const TOPIC_BG = {food:'храна',service:'обслужване',wait:'чакане',price:'цена',cleanliness:'чистота',staff:'персонал',atmosphere:'атмосфера',delivery:'доставка',availability:'наличност',other:'друго'};
 const TONE_BG = {positive:'положително', neutral:'неутрално', negative:'негативно'};
 const tl = t => TOPIC_BG[t] || t;
+const folNum = s => { const m = String(s || '').match(/([\d.,]+)\s*(хил\.|млн\.|[KkMm])?/); if (!m) return null; let v = parseFloat(m[1].replace(',', '.')); if (/хил|k/i.test(m[2] || '')) v *= 1e3; else if (/млн|m/i.test(m[2] || '')) v *= 1e6; return Math.round(v); };
 // profile+ of a Page: badge, likes, "replies within …", other networks, transparency (created, name changes, ads)
 function profileRow(L, small) {
   const net = u => { const m = (u || '').match(/(instagram|tiktok|youtube|youtu\.be|x\.com|twitter|linkedin|pinterest)/i); return m ? m[1].replace('youtu.be', 'youtube').replace('x.com', 'X') : 'линк'; };
@@ -299,7 +338,9 @@ const kpis = [
   ['Препоръчват', share == null ? '—' : share + '%', '--pos'], ['Не препоръчват', fmt(nrec), '--neg'],
   ['С отговор от страницата', withPage ? `${withPage} (${pct(withPage, reviews.length)}%)` : '0', '--accent'],
   ['Генерирани / ръчни', `${gen} / ${man}`, '--warn'], ['Снимки', fmt(reviews.reduce((a, r) => a + (r.photos || 0), 0)), '--muted'],
-  ['Реакции', fmt(reviews.reduce((a, r) => a + (r.reactions || 0), 0)), '--muted']];
+  ['Реакции', fmt(reviews.reduce((a, r) => a + (r.reactions || 0), 0)), '--muted'],
+  ...(pages.some(p => p.location.followers) ? [['Последователи (всички страници)', fmt(pages.filter(inC).reduce((a, p) => a + (folNum(p.location.followers) || 0), 0)), '--accent2']] : []),
+  ...(pages.some(p => p.location.ads_active != null) ? [['Активни реклами', fmt(pages.filter(inC).reduce((a, p) => a + (p.location.ads_active || 0), 0)), '--warn']] : [])];
 $('kpis').innerHTML = kpis.map(([l, v, k]) => `<div class="card kpi" style="--k:var(${k})"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
 
 // brand pages
@@ -345,12 +386,12 @@ function hbars(el, items, max, colorA, colorB) {
   if (!items.length) { el.innerHTML = '<div class="empty">Няма данни</div>'; return; }
   const W = 520, rowH = 24, lab = 190, H = items.length * rowH + 4;
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">${items.map((it, i) => {
-    const y = i * rowH + 2, wa = (W - lab - 90) * (it.a / max), wb = (W - lab - 90) * ((it.b || 0) / max);
+    const y = i * rowH + 2, wa = (W - lab - 130) * (it.a / max), wb = (W - lab - 130) * ((it.b || 0) / max);
     return `<text x="0" y="${y + 15}">${esc(it.label.length > 30 ? it.label.slice(0, 29) + '…' : it.label)}</text>
-      <rect x="${lab}" y="${y + 5}" width="${W - lab - 90}" height="12" rx="4" fill="var(--chip)"/>
+      <rect x="${lab}" y="${y + 5}" width="${W - lab - 130}" height="12" rx="4" fill="var(--chip)"/>
       <rect x="${lab}" y="${y + 5}" width="${Math.max(wa, 0)}" height="12" rx="4" fill="var(${colorA})"/>
       ${it.b ? `<rect x="${lab + wa}" y="${y + 5}" width="${wb}" height="12" rx="4" fill="var(${colorB})"/>` : ''}
-      <text x="${W - 84}" y="${y + 15}">${esc(it.text ?? (it.a + (it.b || 0)))}</text>`; }).join('')}</svg>`;
+      <text x="${W - 124}" y="${y + 15}">${esc(it.text ?? (it.a + (it.b || 0)))}</text>`; }).join('')}</svg>`;
 }
 hbars($('chartPct'),
   locs.filter(l => l.recommend_pct != null).sort((a, b) => b.recommend_pct - a.recommend_pct)
@@ -424,6 +465,85 @@ hbars($('chartPct'),
     <td>${p.negative_reply_rate == null ? '—' : `<div class="barrow"><div class="bar"><i style="width:${p.negative_reply_rate}%;background:var(--accent)"></i></div>${p.negative_reply_rate}%</div>`}</td>
     <td class="n">${p.negative_unanswered ? `<span class="pill neg">${p.negative_unanswered}</span>` : '0'}</td><td class="n">${v(p.template_share)}</td>
     <td class="n">${p.reply_delay_days == null ? '—' : `~${p.reply_delay_days}<span class="small"> (${p.reply_delay_measured})</span>`}</td></tr>`).join('')}</tbody>`;
+})();
+// business summary (model) — the conclusion first, the evidence below
+(function biz() {
+  const B = (D.insights || {}).business || {};
+  $('sec-biz').hidden = $('navBiz').hidden = !(B.findings || []).length;
+  if (!(B.findings || []).length) return;
+  $('bizHead').textContent = B.headline || '';
+  $('bizFind').innerHTML = B.findings.map(f => `<div class="card sig ${f.tone === 'bad' ? 'high' : ''}" style="${f.tone === 'good' ? 'border-left-color:var(--pos)' : f.tone === 'neutral' ? 'border-left-color:var(--muted)' : ''}"><b>${esc(f.title)}</b>${esc(f.text)}</div>`).join('');
+  $('bizAct').innerHTML = (B.actions || []).length ? '<h3>Какво да се направи</h3><ol style="margin:0;padding-left:20px">' + B.actions.map(a => `<li>${esc(a)}</li>`).join('') + '</ol>' : '';
+})();
+// how often reviews come and what they are like
+function monthBars(el, months, series, data) {
+  if (!months.length) { el.innerHTML = '<div class="empty">Няма дати</div>'; return; }
+  const W = 520, H = 160, T = 16, bw = Math.max(4, Math.min(28, (W - 30) / months.length - 3));
+  const tot = m => series.reduce((a, s) => a + ((data[m] || {})[s.key] || 0), 0), max = Math.max(1, ...months.map(tot));
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H + T + 26}" width="100%">${months.map((m, i) => {
+    const x = 20 + i * ((W - 30) / months.length); let y = T + H;
+    const rects = series.map(s => { const v = (data[m] || {})[s.key] || 0, h = H * v / max; y -= h; return v ? `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="2" fill="var(${s.color})"><title>${m}: ${v} ${s.label}</title></rect>` : ''; }).join('');
+    const lab = (i % Math.ceil(months.length / 8) === 0 || i === months.length - 1) ? `<text x="${x + bw / 2}" y="${T + H + 14}" text-anchor="middle">${m.slice(2)}</text>` : '';
+    const t = tot(m); return rects + lab + (t && months.length <= 14 ? `<text x="${x + bw / 2}" y="${T + H - H * t / max - 4}" text-anchor="middle">${t}</text>` : ''); }).join('')}</svg>`;
+}
+const lastMonths = (keys, n) => { const ks = [...new Set(keys)].filter(Boolean).sort(); if (!ks.length) return []; const out = []; let [y, m] = ks.at(-1).split('-').map(Number);
+  for (let i = 0; i < n; i++) { out.unshift(`${y}-${String(m).padStart(2, '0')}`); m--; if (!m) { m = 12; y--; } if (`${y}-${String(m).padStart(2, '0')}` < ks[0]) break; } return out; };
+(function reviewTime() {
+  const by = {}; reviews.forEach(r => { if (!r._date) return; const k = `${r._date.getFullYear()}-${String(r._date.getMonth() + 1).padStart(2, '0')}`;
+    by[k] = by[k] || {pos: 0, neg: 0}; by[k][r.recommends === false ? 'neg' : 'pos']++; });
+  monthBars($('chartRevMonths'), lastMonths(Object.keys(by), 24), [{key: 'pos', color: '--pos', label: 'препоръчват'}, {key: 'neg', color: '--neg', label: 'не препоръчват'}], by);
+  const n = reviews.length || 1, withText = reviews.filter(r => (r.text || '').trim()).length, withPh = reviews.filter(r => r.photos > 0).length,
+    rec = reviews.filter(r => r.recommends === true).length, nrec = reviews.filter(r => r.recommends === false).length;
+  const months12 = lastMonths(Object.keys(by), 12), per = months12.length ? Math.round(months12.reduce((a, m) => a + ((by[m] || {}).pos || 0) + ((by[m] || {}).neg || 0), 0) / months12.length * 10) / 10 : null;
+  const row = (l, v, w, c) => `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between"><span>${l}</span><b>${v}</b></div><div class="bar"><i style="width:${w}%;background:var(${c})"></i></div></div>`;
+  $('revMix').innerHTML = row('Препоръчват', `${pct(rec, rec + nrec) ?? '—'}% (${rec})`, pct(rec, rec + nrec) || 0, '--pos') + row('Не препоръчват', `${pct(nrec, rec + nrec) ?? '—'}% (${nrec})`, pct(nrec, rec + nrec) || 0, '--neg')
+    + row('С текст', `${pct(withText, n)}% (${withText})`, pct(withText, n), '--accent') + row('Със снимки', `${pct(withPh, n)}% (${withPh})`, pct(withPh, n), '--accent2')
+    + `<p class="small">${per != null ? `Средно <b>${per}</b> ревюта на месец за последните ${months12.length} месеца.` : ''} Ревютата със снимки и текст тежат най-много за другите клиенти.</p>`
+    + (() => { const fbT = pages.filter(inC).reduce((a, p) => a + (p.review_total || 0), 0); return fbT > reviews.length * 1.2 ? `<p class="small" style="color:var(--warn)">Извадка: извлечени са ${fmt(reviews.length)} от ${fmt(fbT)} ревюта във Facebook (пускането е било с лимит), затова честотата тук е по-ниска от реалната.</p>` : ''; })();
+})();
+// what the brand publishes, what works, what people write under it, its ads
+(function content() {
+  const I = D.insights || {}, PT = I.post_topics || {}, IN = I.intents || {};
+  const C = (I.content || []).filter(c => { const p = pages.find(x => x.location.url === c.url); return !p || inC(p); });
+  const posts = pages.filter(inC).flatMap(p => (p.posts || []).map(x => ({...x, _page: p})));
+  $('sec-content').hidden = $('navContent').hidden = !posts.length;
+  const comments = posts.flatMap(p => (p.comments_list || []).map(c => ({...c, _post: p})));
+  $('sec-comments').hidden = $('navComments').hidden = !comments.length;
+  const ads = pages.filter(inC).flatMap(p => (p.ads || []).map(a => ({...a, _page: p})));
+  const anyAdsInfo = pages.some(p => p.location.ads_active != null);
+  $('sec-ads').hidden = $('navAds').hidden = !anyAdsInfo;
+  if (anyAdsInfo) $('adsList').innerHTML = ads.length ? ads.slice(0, 60).map(a => `<div class="card"><div class="small">${esc(a._page.location.name)} · стартирана ${esc(a.started || '—')}${a.creatives > 1 ? ` · ${a.creatives} криейтива` : ''}</div>
+    <div class="txt" style="margin:6px 0;white-space:pre-wrap">${esc((a.text || '').slice(0, 400))}${(a.text || '').length > 400 ? '…' : ''}</div>
+    <div>${a.cta ? `<span class="pill man">${esc(a.cta)}</span>` : ''}${a.link ? `<span class="pill">${esc(a.link)}</span>` : ''}</div></div>`).join('')
+    : `<div class="card empty">Няма активни реклами в Ad Library за ${pages.filter(p => p.location.ads_active === 0).map(p => esc(p.location.name)).join(', ') || 'страниците'}.</div>`;
+  if (!posts.length) return;
+  const eng = p => (p.reactions || 0) + (p.comments || 0) + (p.shares || 0);
+  const followers = C.reduce((a, c) => a + (c.followers || 0), 0);
+  const wk = C.map(c => c.posts_per_week_90d).filter(v => v != null);
+  const avgEng = Math.round(posts.reduce((a, p) => a + eng(p), 0) / posts.length * 10) / 10;
+  $('contentKpis').innerHTML = [['Постове', fmt(posts.length), '--accent'], ['Постове/седмица (90 дни)', wk.length ? Math.round(wk.reduce((a, b) => a + b, 0) * 10) / 10 : '—', '--accent'],
+    ['Последователи', followers ? fmt(followers) : '—', '--accent2'], ['Средна ангажираност на пост', fmt(avgEng), '--pos'],
+    ['Коментари под постовете', fmt(posts.reduce((a, p) => a + (p.comments || 0), 0)), '--warn'], ['Споделяния', fmt(posts.reduce((a, p) => a + (p.shares || 0), 0)), '--muted']]
+    .map(([l, v, k]) => `<div class="card kpi" style="--k:var(${k})"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  const pm = {}; posts.forEach(p => { const d = parseDate({date_full: p.date_full}, genYear); if (!d) return; const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; pm[k] = pm[k] || {n: 0}; pm[k].n++; });
+  monthBars($('chartPostMonths'), lastMonths(Object.keys(pm), 24), [{key: 'n', color: '--accent', label: 'поста'}], pm);
+  const grp = key => { const g = {}; posts.forEach(p => { const k = p[key] || 'other'; g[k] = g[k] || {n: 0, e: 0}; g[k].n++; g[k].e += eng(p); }); return Object.entries(g).sort((a, b) => b[1].n - a[1].n); };
+  const TYPES = {photo: 'снимка', album: 'албум', video: 'видео', reel: 'рийл', link: 'линк', event: 'събитие', text: 'само текст'};
+  const tp = grp('topic'); hbars($('chartTopicsPosts'), tp.map(([k, v]) => ({label: PT[k] || k, a: v.n, text: `${v.n} · ${Math.round(v.e / v.n)} на пост`})), Math.max(1, ...tp.map(x => x[1].n)), '--accent');
+  const ty = grp('type'); hbars($('chartTypes'), ty.map(([k, v]) => ({label: TYPES[k] || k, a: v.n, text: `${v.n} · ${Math.round(v.e / v.n)} на пост`})), Math.max(1, ...ty.map(x => x[1].n)), '--accent2');
+  $('topPosts').innerHTML = [...posts].sort((a, b) => eng(b) - eng(a)).slice(0, 5).map(p => `<div class="reply page" style="margin-left:0"><span class="pill gen">${fmt(eng(p))}</span><span class="pill">${esc(PT[p.topic] || p.topic || '')}</span><span class="small">${esc(p.date_full || '')} · ${esc(p._page.location.name)}</span>
+    <div class="txt" style="margin:4px 0 0">${esc(p.summary || (p.text || '').slice(0, 160))}</div>${p.permalink ? `<a class="small" href="${esc(p.permalink)}" target="_blank">виж поста ↗</a>` : ''}</div>`).join('');
+  $('contentTable').innerHTML = `<thead><tr><th>Страница</th><th class="n">Последователи</th><th class="n">Постове</th><th class="n">На седмица</th><th>Последен пост</th><th class="n">Ангажираност/пост</th><th class="n">На 1000 последователи</th><th class="n">Реклами</th></tr></thead><tbody>${C.map(c => `<tr>
+    <td><b>${c.is_brand ? '[Бранд] ' : ''}${esc(c.name)}</b></td><td class="n">${fmt(c.followers)}</td><td class="n">${fmt(c.posts)}</td><td class="n">${c.posts_per_week_90d ?? '—'}</td>
+    <td>${esc(c.last_post || '—')}</td><td class="n">${c.avg_engagement ?? '—'}</td><td class="n">${c.engagement_per_1k_followers ?? '—'}</td><td class="n">${c.ads_active ?? '—'}</td></tr>`).join('')}</tbody>`;
+  if (!comments.length) return;
+  const ic = {}; comments.forEach(c => ic[c.intent || 'other'] = (ic[c.intent || 'other'] || 0) + 1);
+  const ii = Object.entries(ic).sort((a, b) => b[1] - a[1]);
+  hbars($('chartIntents'), ii.map(([k, v]) => ({label: IN[k] || k, a: v, text: `${v} (${pct(v, comments.length)}%)`})), Math.max(1, ...ii.map(x => x[1])), '--warn');
+  const q = C.reduce((a, c) => a + (c.questions_or_complaints || 0), 0), qa = C.reduce((a, c) => a + (c.questions_answered || 0), 0);
+  $('qAnswered').innerHTML = q ? `Страницата е отговорила на <b>${qa} от ${q}</b> въпроса и оплаквания (${pct(qa, q)}%).` : '';
+  const samp = comments.filter(c => (c.intent === 'question' || c.intent === 'complaint') && c.text).slice(0, 8);
+  $('commentSamples').innerHTML = samp.length ? samp.map(c => `<div class="reply"><span class="pill ${c.intent === 'complaint' ? 'neg' : 'man'}">${esc(IN[c.intent])}</span><span class="small">${esc(c.date_text || '')} · под пост от ${esc(c._post.date_full || '')}</span><div class="txt" style="margin:4px 0 0">${esc(c.text)}</div></div>`).join('') : '<div class="empty">Няма въпроси или оплаквания.</div>';
 })();
 }  // end renderAll
 

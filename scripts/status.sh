@@ -6,7 +6,7 @@ log=$(cat output/runs/current.log); pid=$(cat output/runs/current.pid 2>/dev/nul
 if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "RUNNING pid=$pid"; else echo "FINISHED"; fi
 echo "log: $log"
 echo "--- какво прави (последните стъпки) ---"
-grep -E "Папка|Браузър|Facebook в|Рунд|   •|→|Спрях|спирам|Готово|Отчет|Excel|EXIT=|✗|Липсват|Не намирам|NEEDS|ERROR|Traceback" "$log" | tail -25
+grep -E "Папка|Браузър|Facebook в|Рунд|Съдържание|   •|→|Спрях|спирам|Готово|Отчет|Excel|EXIT=|✗|Липсват|Не намирам|NEEDS|ERROR|Traceback" "$log" | tail -25
 dir=$(grep -o "Папка: .*" "$log" | head -1 | sed 's/Папка: //')
 if [ -n "$dir" ] && [ -f "$dir/report.json" ]; then
   echo "report: $(pwd)/$dir/report.json"

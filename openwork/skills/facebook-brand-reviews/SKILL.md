@@ -73,6 +73,10 @@ It prints RUNNING / FINISHED and "какво прави": the tool's own step-by
   (statistics, charts, brand Pages, locations comparison, every review with text, tags, reactions, photos, replies;
   filters, search, CSV/JSON download). Also give the paths of `report.xlsx` (Excel) and `report.json` (all data),
   and mention the all-brands dashboard `output/index.html` (tabs for every brand extracted so far).
+- In full mode a run also collects every Page's posts, the comments under them and its active ads (after the reviews;
+  the log says "Съдържание, рунд N"). That part is slow too: one page per post with comments. Report it as well:
+  `insights.business` (headline, findings, actions — say these FIRST), `insights.content` per Page (posts per week,
+  topics and types that work, comment intents, questions answered, ads).
 - `report.json` also has `insights`: per Page the tone counts, `top_positive` / `top_negative` topics, reply rates,
   negative reviews without an answer, and `signals` (a location getting worse, a topic that spikes). Say the signals
   first if there are any, and for each location what customers praise and what they complain about.

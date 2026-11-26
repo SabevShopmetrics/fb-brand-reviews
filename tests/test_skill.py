@@ -59,7 +59,7 @@ def test_helpers_files(tmp_path):
         (tmp_path / "workspace" / "results" / f.name).write_text(f.read_text())
     out = load_results(run_dir)
     assert len(out) == 1 and out[0].reviews[0].replies_unavailable and out[0].reviews[0].comment_count == 1
-    assert progress_of(run_dir) == {"locations": 3, "done": 1, "stopped": None}
+    assert progress_of(run_dir) == {"locations": 3, "done": 1, "stopped": None, "posts_todo": 1, "comments_todo": 0}
 
 
 def test_stop_file_blocks_navigation(tmp_path):
@@ -444,3 +444,61 @@ def test_store_without_own_page_and_cache_limit(tmp_path):
     m._collect_live = lambda opts, reset=False: ([{"reviewer": "live"}], {})
     r, _ = m._collect({"maxReviews": 100000})
     assert r == [{"reviewer": "live"}]                    # the preflight's 60 do not stand in for "all"
+
+
+def test_posts_and_comments_helpers(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    page = "https://www.facebook.com/chainpage"
+    m._write("brand/chainpage.json", {"location": {"name": "Chain", "url": page}, "status": "ok", "reviews": []})
+    assert [p["url"] for p in m.fb_progress()["posts_todo"]] == [page]
+    opened = []
+    m.fb_open = lambda url: (opened.append(url), {"ok": True, "state": "ok"})[1]
+    posts = [{"permalink": page + "/posts/pfbidA", "date_full": "Сряда, 25 ноември 2026 г. в 12:19", "text": "Ново меню",
+              "type": "photo", "photos": 1, "reactions": 10, "comments": 2, "shares": 1},
+             {"permalink": page + "/posts/pfbidB", "date_full": "Вторник, 24 ноември 2026 г. в 10:00", "text": "Здравейте",
+              "type": "text", "photos": 0, "reactions": 3, "comments": 0, "shares": 0}]
+
+    def run(expr):
+        if "scrollPosts" in expr:
+            return {"count": 2, "done": True, "reason": "no_more"}
+        if "collectedPosts" in expr:
+            return posts
+        if "pageId" in expr:
+            return "123"
+        if "postComments" in expr:
+            return {"comments": [{"author": "Ana", "text": "Колко струва?", "depth": 1},
+                                 {"author": "Chain", "text": "10 лв.", "depth": 2, "is_page_reply": True}]}
+        return {}
+    m._run = run
+    assert m.fb_extract_posts(page, name="Chain")["posts"] == 2
+    assert m.fb_progress()["posts_todo"] == [] and m.fb_progress()["comments_todo"] == 1
+    r = m.fb_extract_comments()
+    assert r["done"] and opened[-1] == page + "/posts/pfbidA" and m.fb_progress()["comments_todo"] == 0
+    saved = m._read("posts/chainpage.json", {})["posts"]
+    assert len(saved[0]["comments_list"]) == 2 and saved[1].get("comments_list") is None
+
+
+def test_load_posts_and_content_insights(tmp_path):
+    import asyncio as aio
+    from fbreviews.insights import analyze_posts, build_insights
+    run_dir = tmp_path / "chain_20261126-100000"
+    ws = run_dir / "workspace"
+    (ws / "brand").mkdir(parents=True)
+    (ws / "posts").mkdir()
+    page = "https://www.facebook.com/chainpage"
+    (ws / "brand" / "chainpage.json").write_text(json.dumps({"location": {"name": "Chain", "url": page, "followers": "2 хил."},
+                                                            "status": "ok", "reviews": [], "ads": [{"library_id": "1", "text": "Оферта"}]}))
+    (ws / "posts" / "chainpage.json").write_text(json.dumps({"url": page, "posts": [
+        {"permalink": page + "/posts/pfbidA", "date_full": "Сряда, 25 ноември 2026 г. в 12:19", "text": "Ново меню: опитайте",
+         "type": "photo", "photos": 1, "reactions": 10, "comments": 2, "shares": 1,
+         "comments_list": [{"author": "Ana", "text": "Колко струва?", "depth": 1},
+                           {"author": "Chain", "text": "10 лв.", "depth": 2, "is_page_reply": True}]},
+        {"permalink": page + "/posts/pfbidB", "date_full": "Вторник, 24 ноември 2026 г. в 10:00", "text": "-20% тази седмица",
+         "type": "text", "reactions": 3, "comments": 0, "shares": 0}]}))
+    brand = load_results(run_dir, "brand")
+    assert len(brand[0].posts) == 2 and brand[0].ads[0].text == "Оферта"
+    aio.run(analyze_posts(brand, llm=None, cache_path=None))
+    assert brand[0].posts[0].topic == "product" and brand[0].posts[1].topic == "promo"
+    assert brand[0].posts[0].comments_list[0].intent == "question"
+    c = build_insights(brand, [], "")["content"][0]
+    assert c["posts"] == 2 and c["followers"] == 2000 and c["questions_or_complaints"] == 1 and c["questions_answered"] == 1

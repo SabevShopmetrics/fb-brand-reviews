@@ -692,3 +692,38 @@ def test_brand_reply_under_a_location_post_counts_as_page_reply(tmp_path):
                            {"author": "Сладкарници Неделя на коментара на Ana", "text": "Да!", "depth": 2}]}]}))
     r = load_results(run_dir)
     assert r[0].posts[0].comments_list[1].is_page_reply
+
+
+def test_comment_marked_author_is_the_page_reply(tmp_path):
+    """Сладкарници Неделя: the brand's answer under its post was read under a location Page's name and counted as
+    unanswered. Facebook marks the post author's comments "Автор": that is the Page, whatever name we passed."""
+    m, _ = load_helpers(tmp_path)
+    stub = """
+function art(label, text, badge, parent) {
+  var a = {getAttribute: function (k) { return k === 'aria-label' ? label : null; }, innerText: text, textContent: text,
+           parentElement: {closest: function () { return parent || null; }}};
+  var spans = [{textContent: 'Svetla', closest: function () { return a; }}];
+  if (badge) spans.push({textContent: badge, closest: function () { return a; }});
+  a.querySelectorAll = function () { return spans; };
+  return a;
+}
+var q = art('Коментар от Svetla Mihova преди година', 'Svetla Mihova\\nКак се поръчва торта?', null, null);
+var r = art('Отговор от Сладкарници Неделя на коментара на Svetla Mihova преди година',
+            'Сладкарници Неделя\\nАвтор\\nSvetla Mihova Здравей, на тел. 070019009', 'Автор', q);
+q.querySelectorAll = (function (own) { return function () { return own.concat([{textContent: 'Автор', closest: function () { return r; }}]); }; })(q.querySelectorAll());
+var dialog = {querySelector: function () { return q; }, querySelectorAll: function () { return [q, r]; }, innerText: 'Публикацията на Сладкарници Неделя'};
+global.window = global; global.innerHeight = 800;
+global.location = {href: 'https://www.facebook.com/nedelya.bg/posts/x', pathname: '/nedelya.bg/posts/x', search: ''};
+global.document = {title: 't', visibilityState: 'visible', body: {innerText: ''},
+  querySelectorAll: function (s) { return s === '[role="dialog"]' ? [dialog] : []; }, querySelector: function () { return null; }};
+"""
+    src = stub + m._bundle("console.log(JSON.stringify(__fbx.postComments('Сладкарници Неделя (Сливен)')));")
+    f = tmp_path / "run.js"
+    f.write_text(src)
+    out = subprocess.run(["node", str(f)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    c = json.loads(out.stdout.strip().splitlines()[-1])["comments"]
+    assert [x["author"] for x in c] == ["Svetla Mihova", "Сладкарници Неделя"]
+    assert c[0]["is_page_reply"] is False  # the badge in the nested reply is not the question's
+    assert c[1]["is_page_reply"] is True and c[1]["by_post_author"] is True and c[1]["reply_to"] == "Svetla Mihova"
+    assert "Автор" not in c[1]["text"]

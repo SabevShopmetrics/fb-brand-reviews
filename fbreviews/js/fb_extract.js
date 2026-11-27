@@ -874,6 +874,12 @@ window.__fbx = (function () {
       var normName = function (s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); };
       var isPage = (function () { var a = normName(author), n = normName(pageName); if (!a || !n) return false; if (a === n) return true;
         var sh = a.length < n.length ? a : n, lg = a.length < n.length ? n : a; return sh.length >= 8 && lg.indexOf(sh + ' ') === 0 && lg.length - sh.length <= 12; })();
+      // Facebook marks the post author's own comments "Автор" / "Author": the Page answering, whatever its name
+      // (a brand post read under a location Page "Сладкарници Неделя (Сливен)" is answered by "Сладкарници Неделя")
+      var byAuthor = Array.prototype.some.call(a.querySelectorAll('span, div'), function (el) {
+        return /^(автор|author)$/i.test((el.textContent || '').trim()) && el.closest('[role="article"]') === a;
+      });
+      if (byAuthor) isPage = true;
       var lines = txt(a).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
       var body = lines.filter(function (l, i) {
         return !(i === 0 && l === author) && l !== '·' && !/^(\d+\s*(мин|ч|д|сед|г|m|h|d|w|y)\.?|отговор|харесване|reply|like|редактирано|edited|автор|author|най-активен фен|топ фен|top fan|нов участник|new member|\d+)$/i.test(l) && !/^·?\s*\d+\s*(мин|ч|д|сед|г)/.test(l);
@@ -884,7 +890,7 @@ window.__fbx = (function () {
       var depth = replyTo || /^(отговор|reply)/i.test(m[1]) || a.parentElement.closest('[role="article"][aria-label]') ? 2 : 1;
       var tagsOnly = text && text.split(/\s{2,}|\n/).every(function (s) { return /^[A-ZА-Я][\p{L}'.-]+(\s+[A-ZА-Я][\p{L}'.-]+){0,3}$/u.test(s.trim()) || !s.trim(); });
       out.push({ author: author, text: text, date_text: when, depth: depth,
-                 is_page_reply: isPage, reply_to: replyTo, tags_only: !!tagsOnly });
+                 is_page_reply: isPage, by_post_author: byAuthor, reply_to: replyTo, tags_only: !!tagsOnly });
     });
     return { found: !!root, comments: out };
   }

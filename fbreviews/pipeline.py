@@ -108,6 +108,13 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
         pass
     if folder == "results":
         promote_partials(ws)
+    # a reply by the brand Page under a location's post is the business answering too
+    brand_names = []
+    for f in sorted((ws / "brand").glob("*.json")) if folder == "results" and (ws / "brand").exists() else []:
+        try:
+            brand_names.append((json.loads(f.read_text()).get("location") or {}).get("name"))
+        except (OSError, ValueError, AttributeError):
+            pass
     out = []
     for f in sorted((ws / folder).glob("*.json")) if (ws / folder).exists() else []:
         if f.stem.startswith("_"):
@@ -123,7 +130,7 @@ def load_results(run_dir: Path, folder: str = "results") -> list[LocationResult]
                                       review_total=int(rt) if isinstance(rt, (int, float)) else None,
                                       recommend_pct=int(rp) if isinstance(rp, (int, float)) else None,
                                       reviews=to_reviews(d.get("reviews") or []), notes=str(d.get("notes") or ""),
-                                      is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", ""), loc.get("name")),
+                                      is_brand=folder == "brand", posts=load_posts(ws, loc.get("url", ""), loc.get("name"), brand_names),
                                       posts_collected=(ws / "posts" / f"{fburl_slug(loc.get('url', ''))}.json").exists(),
                                       ads=[Ad(**{k: v for k, v in a.items() if k in Ad.model_fields})
                                            for a in d.get("ads") or [] if isinstance(a, dict)]))
@@ -175,7 +182,7 @@ def clean_comment(c: dict, names) -> dict:
     return c
 
 
-def load_posts(ws: Path, url: str, name: str | None = None) -> list[Post]:
+def load_posts(ws: Path, url: str, name: str | None = None, extra_names=()) -> list[Post]:
     """posts/<slug>.json of one Page (Phase 3 / 4) → Post list; [] when the Page has none yet."""
     f = ws / "posts" / f"{fburl_slug(url)}.json" if url else None
     if not f or not f.exists():
@@ -185,7 +192,7 @@ def load_posts(ws: Path, url: str, name: str | None = None) -> list[Post]:
         raw = data.get("posts") or []
     except (OSError, ValueError, AttributeError):
         return []
-    names = [n for n in (name, data.get("name")) if n]
+    names = [n for n in (name, data.get("name"), *extra_names) if n]
     out = []
     for p in raw:
         if not isinstance(p, dict):

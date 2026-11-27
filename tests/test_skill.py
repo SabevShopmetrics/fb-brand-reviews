@@ -676,3 +676,19 @@ def test_brand_post_shown_on_location_pages_is_read_and_counted_once(tmp_path):
                              [mk(loc1, [shared, own]), mk(loc2, [shared])])
     assert len(b.posts) == 1 and [p.text for p in l1.posts] == ["Само тук"] and l2.posts == []
     assert "друга страница" in l2.notes
+
+
+def test_brand_reply_under_a_location_post_counts_as_page_reply(tmp_path):
+    run_dir = tmp_path / "nedelya_20261127-100000"
+    ws = run_dir / "workspace"
+    for d in ("brand", "results", "posts"):
+        (ws / d).mkdir(parents=True)
+    loc = "https://www.facebook.com/profile.php?id=100068420884343"
+    (ws / "brand" / "nedelya-bg.json").write_text(json.dumps({"location": {"name": "Сладкарници Неделя", "url": "https://www.facebook.com/nedelya.bg"}, "status": "ok"}))
+    (ws / "results" / "100068420884343.json").write_text(json.dumps({"location": {"name": "Сладкарници Неделя (Plovdiv Mall Plaza)", "url": loc}, "status": "ok"}))
+    (ws / "posts" / "100068420884343.json").write_text(json.dumps({"url": loc, "posts": [
+        {"permalink": "https://www.facebook.com/nedelya.bg/posts/pfbidX", "comments": 2, "text": "Торта",
+         "comments_list": [{"author": "Ana", "text": "Има ли без захар?", "depth": 1},
+                           {"author": "Сладкарници Неделя на коментара на Ana", "text": "Да!", "depth": 2}]}]}))
+    r = load_results(run_dir)
+    assert r[0].posts[0].comments_list[1].is_page_reply

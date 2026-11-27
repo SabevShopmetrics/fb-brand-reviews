@@ -68,3 +68,13 @@ def page_slug(page_url: str) -> str:
     u = urlsplit(norm)
     pid = parse_qs(u.query).get("id", [None])[0]
     return slug(pid or u.path.strip("/").replace("/", "-"))
+
+
+def post_key(url: str) -> str:
+    """One key per Facebook post, whatever Page's feed it was seen in: a location Page that shows the brand's post
+    gives the same permalink (tracking parameters dropped), so the post is read and counted once."""
+    u = urlsplit(str(url or "").strip())
+    host = u.netloc.lower().replace("m.facebook.com", "www.facebook.com").replace("web.facebook.com", "www.facebook.com")
+    q = parse_qs(u.query)
+    keep = "&".join(f"{k}={q[k][0]}" for k in ("story_fbid", "fbid", "v", "id") if k in q)
+    return f"{host}{u.path.rstrip('/').lower()}" + (f"?{keep}" if keep else "")

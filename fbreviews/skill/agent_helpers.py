@@ -1279,12 +1279,62 @@ def _posts_todo():
 def _comments_todo():
     if LITE or not POSTS or not POST_COMMENTS:
         return 0
-    n = 0
+    todo, read = _comment_groups()
+    return sum(1 for k in todo if k not in read)  # a post already read under another Page is only copied
+
+
+def _post_key(url):
+    """Same as fburl.post_key: one key per post, whichever Page's feed showed it."""
+    u = urlsplit(str(url or "").strip())
+    host = u.netloc.lower().replace("m.facebook.com", "www.facebook.com").replace("web.facebook.com", "www.facebook.com")
+    q = parse_qs(u.query)
+    keep = "&".join(f"{k}={q[k][0]}" for k in ("story_fbid", "fbid", "v", "id") if k in q)
+    return f"{host}{u.path.rstrip('/').lower()}" + (f"?{keep}" if keep else "")
+
+
+def _comment_groups():
+    """({post key: [(posts file, index, page name, page url)] still to read}, {post key: comments already read}).
+    A location Page often shows the brand's own posts: the same post is opened once, not once per Page."""
+    names = {p["url"]: p["name"] for p in _saved_pages()}
+    todo, read = {}, {}
     for f in sorted((_WS / "posts").glob("*.json")) if (_WS / "posts").exists() else []:
-        for p in (_read(f"posts/{f.name}", {}) or {}).get("posts", []):
-            if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
-                n += 1
-    return n
+        data = _read(f"posts/{f.name}", {}) or {}
+        for i, p in enumerate(data.get("posts", [])):
+            if not ((p.get("comments") or 0) > 0 and p.get("permalink")):
+                continue
+            k = _post_key(p["permalink"])
+            if p.get("comments_list") is not None:
+                read.setdefault(k, p)
+            else:
+                todo.setdefault(k, []).append((f.name, i, data.get("name") or names.get(data.get("url"), ""),
+                                               data.get("url") or ""))
+    return todo, read
+
+
+def _owner_first(entries, permalink):
+    """The Page whose own address is in the permalink (the post's author) reads it: its name finds its own replies."""
+    for e in entries:
+        tail = (urlsplit(e[3]).path.strip("/") or "").lower()
+        pid = parse_qs(urlsplit(e[3]).query).get("id", [""])[0]
+        if (tail and tail != "profile.php" and f"/{tail}/" in permalink.lower() + "/") or (pid and pid in permalink):
+            return e
+    return entries[0]
+
+
+def _set_comments(entries, src):
+    """Write one read result to every Page's copy of the post."""
+    by_file = {}
+    for fname, i, *_ in entries:
+        by_file.setdefault(fname, []).append(i)
+    for fname, idx in by_file.items():
+        data = _read(f"posts/{fname}", {}) or {}
+        for i in idx:
+            p = data["posts"][i]
+            p["comments_list"] = src.get("comments_list") or []
+            if src.get("comments_error"):
+                p["comments_error"] = src["comments_error"]
+            data["posts"][i] = p
+        _write(f"posts/{fname}", data)
 
 
 def _safe_posts():
@@ -1350,27 +1400,25 @@ def fb_extract_comments(budget_s=None):
     stopped. Works for `budget_s` seconds, then returns {done: False, left}: call it again until done is True."""
     t0, opened = time.time(), 0
     budget = budget_s or CONTENT_BUDGET_S
-    names = {p["url"]: p["name"] for p in _saved_pages()}
-    queue = []
-    for f in sorted((_WS / "posts").glob("*.json")) if (_WS / "posts").exists() else []:
-        data = _read(f"posts/{f.name}", {}) or {}
-        for i, p in enumerate(data.get("posts", [])):
-            if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
-                queue.append((f.name, i, p.get("date_full") or "", data.get("name") or names.get(data.get("url"), "")))
+    todo, read = _comment_groups()
+    for k in [k for k in todo if k in read]:  # the same post was already read under another Page
+        _set_comments(todo.pop(k), read[k])
+    queue = list(todo.items())
     total = len(queue)
-    for k, (fname, i, _, page_name) in enumerate(queue, 1):
+    for n, (k, entries) in enumerate(queue, 1):
         if time.time() - t0 > budget:
-            return {"done": False, "opened": opened, "left": total - k + 1}
-        data = _read(f"posts/{fname}", {}) or {}
-        p = data["posts"][i]
-        _say(f"Коментари: пост {k}/{total} на {page_name or fname} ({p.get('comments')} коментара)")
+            return {"done": False, "opened": opened, "left": total - n + 1}
+        fname, i, page_name, _ = _owner_first(entries, k)
+        p = (_read(f"posts/{fname}", {}) or {})["posts"][i]
+        shown = f" (вижда се в {len(entries)} страници)" if len(entries) > 1 else ""
+        _say(f"Коментари: пост {n}/{total} на {page_name or fname} ({p.get('comments')} коментара){shown}")
         r = fb_open(p["permalink"])
         if not isinstance(r, dict) or r.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
-            return {"done": False, "stopped": (r or {}).get("state"), "opened": opened, "left": total - k + 1}
+            return {"done": False, "stopped": (r or {}).get("state"), "opened": opened, "left": total - n + 1}
         opened += 1
+        res = {}
         if not r.get("ok"):
-            p["comments_list"] = []
-            p["comments_error"] = r.get("state")
+            res = {"comments_list": [], "comments_error": r.get("state")}
         else:
             time.sleep(2)
             try:
@@ -1378,9 +1426,8 @@ def fb_extract_comments(budget_s=None):
                 c = _run("__fbx.postComments(" + json.dumps(page_name) + ")")
             except Exception as e:
                 c = {"comments": [], "error": str(e)[:200]}
-            p["comments_list"] = (c or {}).get("comments", []) if isinstance(c, dict) else []
-        data["posts"][i] = p
-        _write(f"posts/{fname}", data)
+            res = {"comments_list": (c or {}).get("comments", []) if isinstance(c, dict) else []}
+        _set_comments(entries, res)
     return {"done": True, "opened": opened, "left": 0, **_comment_gaps(),
             "next": "Phase 4 is complete. Finish the round now with the summary; do not open posts again or read the "
                     "page yourself. Fewer comments read than the post's count is a known limit (reels, link posts, "

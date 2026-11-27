@@ -24,7 +24,7 @@ from .cdp_bridge import BridgeThread, facebook_logged_in
 from .classify import classify_replies
 from .config import Settings
 from .export import summarize, write_excel, write_json
-from .fburl import normalize_page_url, page_slug as fburl_slug, slug
+from .fburl import normalize_page_url, page_slug as fburl_slug, post_key, slug
 from .models import Ad, BrandReport, LocationPage, LocationResult, Post, PostComment, Reply, Review
 
 logger = logging.getLogger("fbreviews.pipeline")
@@ -265,15 +265,15 @@ def content_todo(ws: Path) -> dict:
                 if url:
                     pages.add(fburl_slug(url))
     have = {f.stem for f in (ws / "posts").glob("*.json")} if (ws / "posts").exists() else set()
-    comments = 0
+    unread, read = set(), set()  # by post: a post shown on several Pages is read once
     for f in (ws / "posts").glob("*.json") if (ws / "posts").exists() else []:
         try:
             for p in json.loads(f.read_text()).get("posts", []):
-                if (p.get("comments") or 0) > 0 and p.get("permalink") and p.get("comments_list") is None:
-                    comments += 1
+                if (p.get("comments") or 0) > 0 and p.get("permalink"):
+                    (unread if p.get("comments_list") is None else read).add(post_key(p["permalink"]))
         except (OSError, ValueError, AttributeError):
             continue
-    return {"posts_todo": len(pages - have), "comments_todo": comments}
+    return {"posts_todo": len(pages - have), "comments_todo": len(unread - read)}
 
 
 def dedupe_pages(brand_results: list[LocationResult], results: list[LocationResult]) -> list[LocationResult]:
@@ -299,9 +299,33 @@ def dedupe_pages(brand_results: list[LocationResult], results: list[LocationResu
     return out
 
 
+def drop_reposts(brand_results: list[LocationResult], results: list[LocationResult]) -> list[LocationResult]:
+    """A post belongs to one Page. Location Pages often show the brand's own posts (same permalink): such a post
+    is counted under the brand Page (or the first Page that has it), not again under every location."""
+    seen: set[str] = set()
+    out = []
+    for r in brand_results + results:
+        keep, dropped = [], 0
+        for p in r.posts:
+            k = post_key(p.permalink) if p.permalink else None
+            if k and k in seen:
+                dropped += 1
+                continue
+            if k:
+                seen.add(k)
+            keep.append(p)
+        if dropped:
+            note = f"{dropped} поста са на друга страница (на бранда или друга локация) и се броят там"
+            r = r.model_copy(update={"posts": keep, "notes": "; ".join(x for x in (r.notes, note) if x)})
+        out.append(r)
+    return out
+
+
 async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True) -> BrandReport:
     brand_results = load_results(run_dir, "brand")
     results = dedupe_pages(brand_results, load_results(run_dir))
+    both = drop_reposts(brand_results, results)
+    brand_results, results = both[:len(brand_results)], both[len(brand_results):]
     llm = None
     if use_llm and s.llm_base_url and s.classifier_model:
         llm = {"base_url": s.llm_base_url, "api_key": s.llm_api_key, "model": s.classifier_model}

@@ -637,3 +637,42 @@ def test_page_replies_in_comments_are_recognised(tmp_path):
                          status="ok", posts=posts, posts_collected=True)
     ci = content_insights(res)
     assert ci["questions_or_complaints"] == 1 and ci["questions_answered"] == 1, ci
+
+
+def test_brand_post_shown_on_location_pages_is_read_and_counted_once(tmp_path):
+    """Сладкарници Неделя: 24 location Pages show the brand's own posts (same permalink) — the run opened the same
+    post up to 16 times and the report counted it under every location."""
+    from fbreviews.pipeline import drop_reposts
+    m, _ = load_helpers(tmp_path)
+    brand = "https://www.facebook.com/nedelya.bg"
+    loc1 = "https://www.facebook.com/profile.php?id=100068420884343"
+    loc2 = "https://www.facebook.com/profile.php?id=100068774284643"
+    shared = {"permalink": brand + "/posts/pfbid027a?__cft__[0]=x", "comments": 3, "reactions": 13, "text": "Торта"}
+    own = {"permalink": loc1.replace("profile.php?id=", "") + "/posts/pfbidOWN", "comments": 1, "text": "Само тук"}
+    m._write("posts/nedelya-bg.json", {"url": brand, "name": "Сладкарници Неделя", "posts": [dict(shared, permalink=brand + "/posts/pfbid027a")]})
+    m._write("posts/100068420884343.json", {"url": loc1, "name": "Неделя (Ботев)", "posts": [dict(shared), dict(own)]})
+    m._write("posts/100068774284643.json", {"url": loc2, "name": "Неделя (Сливен)", "posts": [dict(shared)]})
+    assert m._comments_todo() == 2
+    opened, names = [], []
+    m.fb_open = lambda url: (opened.append(url), {"ok": True, "state": "ok"})[1]
+
+    def run(expr):
+        if "postComments" in expr:
+            names.append(json.loads(expr[expr.index("(") + 1:-1]))
+            return {"comments": [{"author": "Ana", "text": "Супер", "depth": 1}]}
+        return {}
+    m._run = run
+    m.time.sleep = lambda s: None
+    r = m.fb_extract_comments()
+    assert r["done"] and len(opened) == 2 and m._comments_todo() == 0
+    assert names[0] == "Сладкарници Неделя"  # the brand (the post's author) reads its post: its replies are its own
+    for f in ("nedelya-bg", "100068420884343", "100068774284643"):
+        assert m._read(f"posts/{f}.json", {})["posts"][0]["comments_list"] == [{"author": "Ana", "text": "Супер", "depth": 1}]
+
+    from fbreviews.models import LocationPage, LocationResult, Post
+    mk = lambda url, posts: LocationResult(location=LocationPage(name=url, url=url), status="ok",
+                                           posts=[Post(**p) for p in posts])
+    b, l1, l2 = drop_reposts([mk(brand, [dict(shared, permalink=brand + "/posts/pfbid027a")])],
+                             [mk(loc1, [shared, own]), mk(loc2, [shared])])
+    assert len(b.posts) == 1 and [p.text for p in l1.posts] == ["Само тук"] and l2.posts == []
+    assert "друга страница" in l2.notes

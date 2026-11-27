@@ -518,7 +518,34 @@ def fb_add_locations(items):
     return out
 
 
+_IDLE = {"sig": None, "n": 0}
+IDLE_READ_LIMIT = 8   # the agent reading the lists again and again while nothing changes (Costa: 80 steps)
+
+
+def _work_sig():
+    """Changes whenever real work happens: a page load, a saved location / brand Page / posts file, a new location."""
+    def count(folder):
+        return len(list((_WS / folder).glob("*.json"))) if (_WS / folder).exists() else 0
+    loc = _WS / "locations.json"
+    return (_read("pace.json", {}).get("pages"), loc.stat().st_mtime if loc.exists() else 0,
+            count("results"), count("brand"), count("posts"))
+
+
+def _idle_guard(name):
+    sig = _work_sig()
+    if sig == _IDLE["sig"]:
+        _IDLE["n"] += 1
+    else:
+        _IDLE.update(sig=sig, n=1)
+    if _IDLE["n"] > IDLE_READ_LIMIT:
+        raise RuntimeError(
+            f"{name}: you read the lists {_IDLE['n'] - 1} times and nothing changed in between — analysing them "
+            f"again will not move the run. Do what fb_progress()['next'] says: {_next_step_now()}")
+
+
 def fb_locations():
+    if sys._getframe(1).f_globals is not globals():   # called by the agent, not by a helper
+        _idle_guard("fb_locations")
     return _read("locations.json", [])
 
 
@@ -761,6 +788,8 @@ def fb_save_result(location, result, notes="", folder="results"):
 
 def fb_progress():
     """{'locations': n, 'done': n, 'todo': [location dicts not saved yet], 'stopped': reason|None}."""
+    if sys._getframe(1).f_globals is not globals():
+        _idle_guard("fb_progress")
     locs = fb_locations()
     done = {p.stem for p in (_WS / "results").glob("*.json") if not p.stem.startswith("_")} if (_WS / "results").exists() else set()
     todo = [l for l in locs if fb_slug(l["url"]) not in done]
@@ -774,6 +803,11 @@ def fb_progress():
             "override_active": bool(_override_src().strip()),
             "posts_todo": _posts_todo(), "comments_todo": _comments_todo(),
             "next": _next_step(locs, todo, [b for b in brands if fb_slug(b["url"]) not in bdone])}
+
+
+def _next_step_now():
+    p = fb_progress()
+    return p["next"]
 
 
 def _next_step(locs, todo, brand_todo):

@@ -845,3 +845,20 @@ def test_pipeline_sees_reviews_finished_for_a_brand_without_location_pages(tmp_p
     assert not reviews_finished(ws)   # search still open
     (ws / "search_state.json").write_text(json.dumps({"closed": True}))
     assert reviews_finished(ws)
+
+
+def test_agent_rereading_the_lists_with_nothing_changing_is_refused(tmp_path):
+    import pytest as _pt
+    m, _ = load_helpers(tmp_path)
+    m.fb_add_locations([{"name": "Costa Coffee Larkhall", "url": "https://www.facebook.com/costacoffeelarkhall"}])
+    agent = {"fb_locations": m.fb_locations, "fb_progress": m.fb_progress}
+    for _ in range(m.IDLE_READ_LIMIT):
+        exec("locs = fb_locations()", agent)
+    with _pt.raises(RuntimeError, match="extract the next location"):
+        exec("locs = fb_locations()", agent)
+    # real work (a saved location) resets the count
+    (m._WS / "results").mkdir(exist_ok=True)
+    (m._WS / "results" / "costacoffeelarkhall.json").write_text("{}")
+    exec("p = fb_progress()", agent)
+    for _ in range(10):   # the helpers' own reads never count
+        exec("fb_locations()", m.__dict__)

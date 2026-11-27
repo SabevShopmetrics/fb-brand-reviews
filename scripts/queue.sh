@@ -6,12 +6,31 @@
 #   - daily page cap reached  -> sleeps until 00:15 and continues the same brand
 #   - Facebook asks for a login / security check -> the queue STOPS (never gets around it)
 #   - a line "FRESH <brand>" starts a brand-new run (e.g. a brand that only has an old lite test), then finishes it
+#   - OpenWork closed, Facebook logged out, or the model server down -> waits and checks again every 10 min
+#     (scripts/queue_ready.py), never burns through the brands with failed or lite runs
 # Start:  nohup zsh scripts/queue.sh > output/runs/queue.log 2>&1 &      Stop: touch output/QUEUE_STOP
 cd "$(dirname "$0")/.." || exit 1
 Q="${1:-output/queue.txt}"
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 busy() { [ -f output/runs/current.pid ] && kill -0 "$(cat output/runs/current.pid)" 2>/dev/null; }
 wait_free() { while busy; do sleep 30; [ -f output/QUEUE_STOP ] && { say "QUEUE_STOP — спирам опашката"; exit 0; }; done; }
+# OpenWork's browser up, Facebook logged in, the model answering — otherwise wait (said once per new reason)
+wait_ready() {
+  local last=""
+  while true; do
+    r=$(.venv/bin/python scripts/queue_ready.py 2>/dev/null); [ -z "$r" ] && r="error"
+    [ "$r" = "ok" ] && { [ -n "$last" ] && say "▶ всичко е готово отново — продължавам"; return; }
+    case "$r" in
+      no_browser) why="браузърът на OpenWork не е отворен / няма таб" ;;
+      logged_out) why="Facebook не е логнат в OpenWork — логни се там" ;;
+      no_model)   why="моделът не отговаря" ;;
+      *)          why="проверката не мина ($r)" ;;
+    esac
+    [ "$r" != "$last" ] && say "⏳ чакам: $why — проверявам пак на всеки 10 мин"
+    last=$r
+    for i in $(seq 20); do sleep 30; [ -f output/QUEUE_STOP ] && { say "QUEUE_STOP — спирам опашката"; rm -f output/QUEUE_STOP; exit 0; }; done
+  done
+}
 
 say "опашка: $Q"
 while true; do
@@ -19,7 +38,7 @@ while true; do
   line=$(grep -v '^\s*#' "$Q" | grep -v '^\s*$' | head -1)
   [ -z "$line" ] && { say "опашката е празна — край"; exit 0; }
   brand="${line#FRESH }"; fresh_run=""; [ "$brand" != "$line" ] && fresh_run=1
-  tries=0
+  tries=0; bad=0
   wait_free
   # a brand finished in the last 3 days (nothing left to collect) is not run again
   fresh=$(.venv/bin/python - "$brand" <<'PY'
@@ -37,6 +56,7 @@ PY
   else
   while true; do
     wait_free
+    wait_ready
     tries=$((tries + 1))
     say "▶ $brand (опит $tries)"
     if [ -n "$fresh_run" ] && [ $tries -eq 1 ]; then out=$(FRESH=1 scripts/run_bg.sh "$brand"); else out=$(scripts/run_bg.sh "$brand"); fi
@@ -47,6 +67,16 @@ PY
     if grep -qE "Спрях заради Facebook|login_required|blocked at|⛔" "$log"; then
       say "⛔ Facebook поиска вход/проверка при $brand — опашката спира (провери акаунта в OpenWork)"
       exit 2
+    fi
+    # the run could not even start (model / OpenWork gone) or fell back to lite (logged out): not a real try
+    if grep -qE "✗ моделът не отговаря|BridgeError|минавам автоматично на лек режим" "$log"; then
+      bad=$((bad + 1))
+      if [ $bad -le 6 ]; then  # at most 6 such restarts per brand, so a wrong check can never loop for ever
+        say "  $brand не тръгна както трябва (модел / браузър / вход) — изчаквам и пускам пак"
+        tries=$((tries - 1))
+        sleep 60
+        continue
+      fi
     fi
     if grep -q "Дневният лимит" "$log"; then
       secs=$(( $(date -j -f '%Y-%m-%d %H:%M' "$(date -v+1d '+%Y-%m-%d') 00:15" +%s) - $(date +%s) ))

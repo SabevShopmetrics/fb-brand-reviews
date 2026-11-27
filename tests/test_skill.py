@@ -792,3 +792,28 @@ def test_preflight_tries_another_sample_when_one_page_shows_few_reviews(tmp_path
     m.fb_check_reviews = lambda r, d, mx, mode: {"healthy": False, "failed": ["empty_text"], "warnings": [], "stats": {}}
     opened.clear()
     assert m.fb_preflight()["healthy"] is False and len(opened) == 1
+
+
+def test_progress_says_finish_when_reviews_are_complete_with_no_location_pages(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    m.fb_add_brand_pages([{"name": "Domino's Pizza Bulgaria", "url": "https://www.facebook.com/DominosBulgaria"}])
+    assert "brand" in m.fb_progress()["next"].lower()
+    (m._WS / "brand").mkdir(exist_ok=True)
+    (m._WS / "brand" / (m.fb_slug("https://www.facebook.com/DominosBulgaria") + ".json")).write_text("{}")
+    assert not m.fb_progress()["next"].startswith("DONE")   # search still open: look for locations first
+    m._write("search_state.json", {"queries": {}, "idle": 6, "closed": True})
+    assert m.fb_progress()["next"].startswith("DONE")
+
+
+def test_agent_reopening_one_page_again_and_again_is_refused(tmp_path):
+    import pytest as _pt
+    m, _ = load_helpers(tmp_path)
+    m.fb_stopped = lambda: "test"   # fb_open returns early: no browser needed
+    agent = {"fb_open": m.fb_open}
+    for _ in range(m.OPEN_REPEAT_LIMIT):
+        exec("r = fb_open('https://www.facebook.com/DominosBulgaria')", agent)
+    with _pt.raises(RuntimeError, match="next"):
+        exec("fb_open('https://www.facebook.com/DominosBulgaria')", agent)
+    m._OPEN_RECENT.clear()
+    for _ in range(10):   # the helpers' own page loads never count
+        exec("fb_open('https://www.facebook.com/DominosBulgaria')", m.__dict__)

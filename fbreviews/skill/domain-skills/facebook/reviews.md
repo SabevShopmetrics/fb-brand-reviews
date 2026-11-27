@@ -21,7 +21,7 @@ changes its UI (`fb_save_override`).
 ## Helpers
 | Helper | What it does |
 |---|---|
-| `fb_progress()` | `{locations, done, todo, stopped, preflight: {healthy, due, failed, unhealthy_streak}, override_active}` — call FIRST: the run may be a continuation. `locations`, `done`, `brand_pages`, `comments_todo` are NUMBERS (no `len()`); `todo`, `brand_todo`, `posts_todo` are lists |
+| `fb_progress()` | `{locations, done, todo, stopped, preflight: {healthy, due, failed, unhealthy_streak}, override_active}` — call FIRST: the run may be a continuation. `locations`, `done`, `brand_pages`, `comments_todo` are NUMBERS (no `len()`); `todo`, `brand_todo`, `posts_todo` are lists. `next` is the one thing to do now; when it starts with `DONE` finish the round at once (open no more pages) |
 | `fb_add_brand_pages([{name, url, scope}])` | record the brand's official Pages (global / country): a separate section, never locations |
 | `fb_extract_brand(url, name=...)` | the brand Page as its own section: public data (+ reviews and replies when logged in) |
 | `fb_preflight(sample_url=None, search_query=None, reload=True)` | health report of the extractor on one reviews page (and search) → `{healthy, failed, warnings, reviews, search, next}` — see preflight.md |

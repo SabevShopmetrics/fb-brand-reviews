@@ -45,6 +45,7 @@ OPEN_THREADS = bool(_CFG.get("open_threads", False))
 # Lite mode: a fresh browser with NO Facebook login. Only the public Page data is read (fb_page_summary); the login
 # dialog Facebook shows to visitors is expected and is not a reason to stop (a redirect to /login still is).
 LITE = bool(_CFG.get("lite", False))
+PHASE = _CFG.get("phase", "reviews")   # "reviews" or "content" (posts and comments rounds)
 SEARCH_CHALLENGE = re.compile(r"(bots use|confirm this search was made by a human|verify you are human|потвърдете, че сте "
                               r"човек|unusual traffic|captcha|are you a robot)", re.I)
 SCROLL_MAX_S = float(_CFG.get("scroll_max_s", 3600))  # at most this long scrolling one reviews tab
@@ -277,9 +278,22 @@ def _run(expression):
     return _h().js(expression)
 
 
+_OPEN_RECENT = []
+OPEN_REPEAT_LIMIT = 5   # the agent's own fb_open of one URL within its last 10 opens (the helpers' loads never count)
+
+
 def fb_open(url):
     """goto_url with the skill's pacing (pause between page loads, daily cap) and a safety check afterwards.
-    Returns {'ok': bool, 'state': 'ok'|'login_required'|'blocked'|'not_found'|'cap_reached'|'stopped', 'url': ...}."""
+    Returns {'ok': bool, 'state': 'ok'|'login_required'|'blocked'|'not_found'|'cap_reached'|'stopped', 'url': ...}.
+    The agent opening the same page again and again is refused (Domino's: one brand Page opened 30+ times)."""
+    if sys._getframe(1).f_globals is not globals():   # called by the agent, not by a helper
+        key = str(url or "").split("?")[0].rstrip("/").lower()
+        _OPEN_RECENT.append(key)
+        del _OPEN_RECENT[:-10]
+        if _OPEN_RECENT.count(key) > OPEN_REPEAT_LIMIT:
+            raise RuntimeError(
+                f"fb_open: you opened {_short(url)} {_OPEN_RECENT.count(key) - 1} times already; reading it again "
+                f"will not change anything. Do what fb_progress()['next'] says: {fb_progress()['next']}")
     if fb_stopped():
         return {"ok": False, "state": "stopped", "reason": fb_stopped()}
     pace = _read("pace.json", {})
@@ -746,7 +760,26 @@ def fb_progress():
             "preflight": {"healthy": pf.get("healthy"), "at": pf.get("at"), "failed": pf.get("failed", []),
                           "due": (not LITE) and _preflight_due(pf), "unhealthy_streak": pf.get("unhealthy_streak", 0)},
             "override_active": bool(_override_src().strip()),
-            "posts_todo": _posts_todo(), "comments_todo": _comments_todo()}
+            "posts_todo": _posts_todo(), "comments_todo": _comments_todo(),
+            "next": _next_step(locs, todo, [b for b in brands if fb_slug(b["url"]) not in bdone])}
+
+
+def _next_step(locs, todo, brand_todo):
+    """One plain instruction: what the agent does now (the round ends with done once there is nothing left)."""
+    if fb_stopped():
+        return f"STOPPED: {fb_stopped()} — finish the round now and report it"
+    if PHASE == "content":
+        if _posts_todo() or _comments_todo():
+            return "content: call fb_extract_posts() / fb_extract_comments() as content.md says"
+        return "DONE: posts and comments are complete — finish the round now with the summary; open no more pages"
+    if brand_todo:
+        return "extract the brand Page(s) in brand_todo with fb_extract_brand(url, name=...)"
+    if todo:
+        return f"extract the next location in todo with fb_extract_reviews(url, name=...) ({len(todo)} left)"
+    if not (_search_state().get("closed") or _CFG.get("locations_given")):
+        return "find location Pages: fb_search_pages with the brand plus city names, then fb_add_locations"
+    return (f"DONE: the reviews are complete ({len(locs)} locations, brand Page(s) extracted) — finish the round now "
+            "with the summary; open no more pages (0 location Pages is a valid result: say so in notes)")
 
 
 # ------------------------------------------------------------------ preflight / self-repair

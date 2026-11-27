@@ -180,7 +180,7 @@ async def run_agent(brand: str, *, s: Settings, llm: Any, browser: Any, workspac
     from browser_use import Agent
 
     _allow_long_cells()
-    aw = install_skill(workspace, config)
+    aw = install_skill(workspace, {**config, "phase": phase})
     kwargs: dict[str, Any] = {}
     if not s.llm_vision:
         kwargs["use_vision"] = False

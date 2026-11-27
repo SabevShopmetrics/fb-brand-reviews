@@ -833,17 +833,49 @@ window.__fbx = (function () {
   }
 
   // The comments of the open post (permalink → Facebook shows it in a dialog over the feed: read ONLY that dialog).
+  var COMMENT_LABEL = /^(коментар|отговор|comment|reply)\s+(от|by)\s/i;
+  function hasComments(el) {
+    return !!el && Array.prototype.some.call(el.querySelectorAll('[role="article"][aria-label]'), function (a) {
+      return COMMENT_LABEL.test(a.getAttribute('aria-label') || '');
+    });
+  }
+
   function postDialog() {
+    // a post dialog, never the notifications panel (its items are articles too, but not "Коментар от …")
     var ds = Array.prototype.filter.call(document.querySelectorAll('[role="dialog"]'), function (d) {
-      return d.querySelector('[role="article"][aria-label]') || /^(публикацията на|post by|.+'s post)/i.test(txt(d).slice(0, 80));
+      return hasComments(d) || /^(публикацията на|post by|.+'s post)/i.test(txt(d).slice(0, 80));
     });
     return ds[ds.length - 1] || null;
   }
 
+  // where the comments of the open post are: its dialog, the page, or the side panel of the photo viewer / reel
+  // (role=complementary) — album photos and videos (which open as reels) keep them there
+  function commentRoot() {
+    var d = postDialog();
+    if (d) return d;
+    var main = document.querySelector('[role="main"]');
+    var cands = [main].concat(Array.prototype.slice.call(document.querySelectorAll('[role="complementary"]')));
+    for (var i = 0; i < cands.length; i++) if (hasComments(cands[i])) return cands[i];
+    return main;
+  }
+
+  // a reel / video shows its comments only after its "Коментар, N коментара" button (opens the panel; writes nothing)
+  async function openCommentsPanel() {
+    if (hasComments(commentRoot())) return false;
+    var b = Array.prototype.find.call(document.querySelectorAll('[aria-label]'), function (e) {
+      return /^(коментар|comment),\s*[\d.,]+/i.test(e.getAttribute('aria-label') || '');
+    });
+    if (!b) return false;
+    try { b.click(); } catch (e) { return false; }
+    await sleep(2500);
+    return true;
+  }
+
   async function expandComments(opts) {
     opts = opts || {};
-    var root = postDialog() || document.querySelector('[role="main"]');
-    if (!root) return { clicked: 0 };
+    var panel = await F.openCommentsPanel();
+    var root = F.commentRoot();
+    if (!root) return { clicked: 0, panel: panel };
     var clicked = 0, rounds = opts.rounds || 6;
     for (var r = 0; r < rounds; r++) {
       var n = 0;
@@ -857,11 +889,11 @@ window.__fbx = (function () {
       if (!n) break;
       await sleep(opts.delayMs || 1200);
     }
-    return { clicked: clicked };
+    return { clicked: clicked, panel: panel };
   }
 
   function postComments(pageName) {
-    var root = postDialog() || document.querySelector('[role="main"]');
+    var root = F.commentRoot();
     if (!root) return { found: false, comments: [] };
     var out = [], seen = {};
     Array.prototype.forEach.call(root.querySelectorAll('[role="article"][aria-label]'), function (a) {
@@ -937,7 +969,7 @@ window.__fbx = (function () {
     return { total: total != null ? total : ads.length, ads: ads };
   }
 
-  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.transparency = transparency; F.parsePagePost = parsePagePost; F.pagePostEls = pagePostEls; F.scrollPosts = scrollPosts; F.collectedPosts = collectedPosts; F.dateIso = dateIso; F.postDialog = postDialog; F.expandComments = expandComments; F.postComments = postComments; F.pageId = pageId; F.adsLibrary = adsLibrary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
+  F.scroll = scroll; F.sweep = sweep; F.needsSweep = needsSweep; F.pageSummary = pageSummary; F.transparency = transparency; F.parsePagePost = parsePagePost; F.pagePostEls = pagePostEls; F.scrollPosts = scrollPosts; F.collectedPosts = collectedPosts; F.dateIso = dateIso; F.postDialog = postDialog; F.commentRoot = commentRoot; F.openCommentsPanel = openCommentsPanel; F.hasComments = hasComments; F.expandComments = expandComments; F.postComments = postComments; F.pageId = pageId; F.adsLibrary = adsLibrary; F.webResults = webResults; F.extract = extract; F.extractPost = extractPost; F.pageState = pageState;
   F.searchResults = searchResults; F.tabState = tabState; F.reviewTotal = reviewTotal; F.recommendPct = recommendPct;
   F.reset = function () { window.__fbxAcc = null; window.__fbxState = null; window.scrollTo(0, 0); return true; };
   F.override = null;   // set by the override script: {version, notes}

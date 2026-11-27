@@ -789,6 +789,10 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
                 # old ratings it no longer lists. Keep what was read (partial), do not "repair" the extractor.
                 warnings.append(f"list_end: Facebook stopped listing at {n} of {expect} reviews (its count includes "
                                 "old ratings it does not show) — saved as partial")
+            elif cov < need and expect - n > 2 and mode != "preflight" and n >= 1:
+                # during the run a gap alone is Facebook's own limit far more often than a broken extractor (the
+                # preflight sample already proved the extractor): save as partial, never start a "repair" over it
+                warnings.append(f"low_coverage: read {n} of {expect} reviews ({cov:.0%}) — saved as partial")
             elif cov < need and expect - n > 2:  # a tiny page (3 of 4): Facebook counts ratings it does not show
                 fail("coverage", f"read {n} of {expect} reviews ({cov:.0%} < {need:.0%}): units/scrolling/accumulation")
             if n > total * HEALTH["over_total_factor"] + 2:

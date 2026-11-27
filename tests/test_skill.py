@@ -187,9 +187,11 @@ def test_check_reviews_thresholds(tmp_path):
     for n, total in ((6, 11), (3, 6)):  # Fornetti Falatozó / Pásztó: a short list Facebook ended itself
         h = m.fb_check_reviews(good[:n], {"review_total": total, "scroll_reason": "no_more"}, mode="run")
         assert "coverage" not in h["failed"] and any(w.startswith("list_end") for w in h["warnings"])
-    assert m.fb_check_reviews(good[:6], {"review_total": 11}, mode="run")["failed"] == ["coverage"]  # still loading
-    assert m.fb_check_reviews(good[:2], {"review_total": 40, "scroll_reason": "no_more"},
-                              mode="run")["failed"] == ["coverage"]  # 5% read: the extractor, not Facebook
+    assert m.fb_check_reviews(good[:6], {"review_total": 11})["failed"] == ["coverage"]  # preflight: still strict
+    assert m.fb_check_reviews(good[:2], {"review_total": 40, "scroll_reason": "no_more"})["failed"] == ["coverage"]
+    # during the run a gap alone never fails (no "repair" over Facebook's own limit): partial + a warning
+    h = m.fb_check_reviews(good[:2], {"review_total": 40}, mode="run")
+    assert h["failed"] == [] and any(w.startswith("low_coverage") for w in h["warnings"])
     assert "over_total" in m.fb_check_reviews(good, {"review_total": 3})["failed"]
     h = m.fb_check_reviews([_review(1, recommends="yes", comment_count="2")], {"review_total": 1})
     assert h["failed"] == ["schema"] and "recommends" in h["details"]["schema"]
@@ -331,10 +333,12 @@ def test_counts_only_branch_reports_partial(fake):
     # everything up to max_reviews loaded → ok
     use(FakePage([_review(i) for i in range(20)], 522))
     assert m.fb_extract_reviews("https://www.facebook.com/x1", max_reviews=20)["status"] == "ok"
-    # far too few → suspect (not saved), fallback partial
+    # far too few during the run → still saved as partial with a warning (a gap alone never starts a "repair":
+    # Supa Star and Fornetti were Facebook's own limit, not a broken extractor)
     use(FakePage([_review(i) for i in range(8)], 522))
     res = m.fb_extract_reviews("https://www.facebook.com/x2", max_reviews=20)
-    assert res["status"] == "suspect" and res["fallback_status"] == "partial" and "coverage" in res["health"]["failed"]
+    assert res["status"] == "partial" and not res["health"]["failed"]
+    assert any(w.startswith("low_coverage") for w in res["health"]["warnings"])
     # preflight flags the same shortfall (80% rule)
     assert m.fb_check_reviews([_review(i) for i in range(14)], {"review_total": 522}, max_reviews=20)["failed"] == ["coverage"]
 

@@ -253,6 +253,22 @@ def progress_of(run_dir: Path) -> dict:
     return {"locations": len(locs), "done": done, "stopped": stop, **content_todo(ws)}
 
 
+def reviews_finished(ws: Path) -> bool:
+    """The reviews part has nothing left: every location and brand Page is saved and the search for location Pages
+    is over (locations found, or search closed: a chain with no store Pages, Domino's Pizza България)."""
+    def read(name, default):
+        try:
+            return json.loads((ws / name).read_text())
+        except (OSError, ValueError):
+            return default
+    locs, brands = read("locations.json", []), read("brand_pages.json", [])
+    saved = {f.stem for folder in ("results", "brand") if (ws / folder).exists() for f in (ws / folder).glob("*.json")}
+    if not (locs or brands):
+        return False
+    todo = [x for x in locs + brands if fburl_slug(normalize_page_url(x.get("url", "")) or x.get("url", "")) not in saved]
+    return not todo and bool(locs or read("search_state.json", {}).get("closed"))
+
+
 CONTENT_STATUSES = ("ok", "partial", "no_reviews", "reviews_disabled", "summary_only")
 
 
@@ -545,7 +561,8 @@ async def run(
             before = progress_of(run_dir)
             searched = before["locations"] or before["done"] or any(r.get("after_done") for r in meta["rounds"]
                                                                     if isinstance(r, dict))
-            if resume and searched and before["done"] >= before["locations"] and not before["stopped"]:
+            if not before["stopped"] and (reviews_finished(ws) or (
+                    resume and searched and before["done"] >= before["locations"])):
                 # (0 location Pages but the brand Page / stores saved earlier = the search already concluded)
                 progress(f"Всички {before['locations'] or before['done']} страници вече са готови — минавам направо "
                          "към съдържанието.")
@@ -581,7 +598,7 @@ async def run(
                 progress(f"Спрях заради Facebook: {after['stopped'] or sm.get('stop_reason')}. "
                          "Проверете акаунта в OpenWork и продължете по-късно с --resume.")
                 break
-            all_done = after["locations"] > 0 and after["done"] >= after["locations"]
+            all_done = (after["locations"] > 0 and after["done"] >= after["locations"]) or reviews_finished(ws)
             if sm.get("complete") or all_done:
                 break
             no_progress = after["done"] == before["done"] and after["locations"] == before["locations"]

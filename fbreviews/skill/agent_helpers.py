@@ -278,6 +278,16 @@ def _run(expression):
     return _h().js(expression)
 
 
+def _done_guard(name):
+    """A reviews round with nothing left to do ends: the agent's own page reads are refused (it once spent a whole
+    round re-reading the brand Page of a chain with no store Pages, Domino's)."""
+    if PHASE != "reviews" or LITE:
+        return
+    nxt = fb_progress()["next"]
+    if nxt.startswith("DONE"):
+        raise RuntimeError(f"{name}: {nxt}. Return your final summary now (complete=true).")
+
+
 _OPEN_RECENT = []
 OPEN_REPEAT_LIMIT = 5   # the agent's own fb_open of one URL within its last 10 opens (the helpers' loads never count)
 
@@ -287,6 +297,7 @@ def fb_open(url):
     Returns {'ok': bool, 'state': 'ok'|'login_required'|'blocked'|'not_found'|'cap_reached'|'stopped', 'url': ...}.
     The agent opening the same page again and again is refused (Domino's: one brand Page opened 30+ times)."""
     if sys._getframe(1).f_globals is not globals():   # called by the agent, not by a helper
+        _done_guard("fb_open")
         key = str(url or "").split("?")[0].rstrip("/").lower()
         _OPEN_RECENT.append(key)
         del _OPEN_RECENT[:-10]
@@ -346,6 +357,7 @@ def fb_js(expression):
     fb_js("__fbx.extract({})"), fb_js("__fbx.pageState()"), fb_js("__fbx.posts().length").
     The same expression run again and again (polling a page that does not change) is refused after a few times:
     the agent once spent 60 steps on one check (Fornetti)."""
+    _done_guard("fb_js")
     if expression == _JS_REPEAT["expr"]:
         _JS_REPEAT["n"] += 1
     else:

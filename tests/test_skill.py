@@ -817,3 +817,31 @@ def test_agent_reopening_one_page_again_and_again_is_refused(tmp_path):
     m._OPEN_RECENT.clear()
     for _ in range(10):   # the helpers' own page loads never count
         exec("fb_open('https://www.facebook.com/DominosBulgaria')", m.__dict__)
+
+
+def test_once_reviews_are_done_the_agent_cannot_keep_browsing(tmp_path):
+    import pytest as _pt
+    m, _ = load_helpers(tmp_path)
+    m.fb_add_brand_pages([{"name": "Domino's Pizza Bulgaria", "url": "https://www.facebook.com/DominosBulgaria"}])
+    (m._WS / "brand").mkdir(exist_ok=True)
+    (m._WS / "brand" / (m.fb_slug("https://www.facebook.com/DominosBulgaria") + ".json")).write_text("{}")
+    m._write("search_state.json", {"queries": {}, "idle": 6, "closed": True})
+    m._run = lambda expr: 1
+    agent = {"fb_open": m.fb_open, "fb_js": m.fb_js}
+    with _pt.raises(RuntimeError, match="DONE"):
+        exec("fb_open('https://www.facebook.com/DominosBulgaria/about')", agent)
+    with _pt.raises(RuntimeError, match="DONE"):
+        exec("fb_js('document.body.innerText.length')", agent)
+
+
+def test_pipeline_sees_reviews_finished_for_a_brand_without_location_pages(tmp_path):
+    from fbreviews.pipeline import reviews_finished
+    ws = tmp_path
+    (ws / "brand_pages.json").write_text(json.dumps([{"name": "D", "url": "https://www.facebook.com/DominosBulgaria"}]))
+    (ws / "locations.json").write_text("[]")
+    assert not reviews_finished(ws)
+    (ws / "brand").mkdir()
+    (ws / "brand" / "dominosbulgaria.json").write_text("{}")
+    assert not reviews_finished(ws)   # search still open
+    (ws / "search_state.json").write_text(json.dumps({"closed": True}))
+    assert reviews_finished(ws)

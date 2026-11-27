@@ -302,9 +302,25 @@ def fb_open(url):
     return {"ok": state.get("state") == "ok", **state}
 
 
+_JS_REPEAT = {"expr": None, "n": 0}
+JS_REPEAT_LIMIT = 6
+
+
 def fb_js(expression):
     """Run the bundled extractor (+ the workspace override, if any) plus `expression` in the page, e.g.
-    fb_js("__fbx.extract({})"), fb_js("__fbx.pageState()"), fb_js("__fbx.posts().length")."""
+    fb_js("__fbx.extract({})"), fb_js("__fbx.pageState()"), fb_js("__fbx.posts().length").
+    The same expression run again and again (polling a page that does not change) is refused after a few times:
+    the agent once spent 60 steps on one check (Fornetti)."""
+    if expression == _JS_REPEAT["expr"]:
+        _JS_REPEAT["n"] += 1
+    else:
+        _JS_REPEAT.update(expr=expression, n=1)
+    if _JS_REPEAT["n"] > JS_REPEAT_LIMIT:
+        raise RuntimeError(
+            f"fb_js: this exact check ran {_JS_REPEAT['n'] - 1} times in a row and the page does not change. Stop "
+            "polling. For a location's reviews call fb_extract_reviews(url, name=...) once and save what it returns "
+            "(a short list Facebook ends itself is saved as partial); then go on to the next item of "
+            "fb_progress()['todo'] — never wait on one page.")
     return _run(expression)
 
 

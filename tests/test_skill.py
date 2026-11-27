@@ -733,3 +733,14 @@ global.document = {title: 't', visibilityState: 'visible', body: {innerText: ''}
     assert c[0]["is_page_reply"] is False  # the badge in the nested reply is not the question's
     assert c[1]["is_page_reply"] is True and c[1]["by_post_author"] is True and c[1]["reply_to"] == "Svetla Mihova"
     assert "Автор" not in c[1]["text"]
+
+
+def test_fb_js_refuses_endless_polling(tmp_path):
+    import pytest as _pt
+    m, _ = load_helpers(tmp_path)
+    m._run = lambda expr: {"posts": 3}
+    for _ in range(m.JS_REPEAT_LIMIT):
+        assert m.fb_js("JSON.stringify({posts: __fbx.posts().length})") == {"posts": 3}
+    with _pt.raises(RuntimeError, match="Stop polling"):
+        m.fb_js("JSON.stringify({posts: __fbx.posts().length})")
+    assert m.fb_js("__fbx.pageState()") == {"posts": 3}  # another check resets the count

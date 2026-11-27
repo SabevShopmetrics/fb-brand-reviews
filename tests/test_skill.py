@@ -748,3 +748,47 @@ def test_fb_js_refuses_endless_polling(tmp_path):
     with _pt.raises(RuntimeError, match="Stop polling"):
         m.fb_js("JSON.stringify({posts: __fbx.posts().length})")
     assert m.fb_js("__fbx.pageState()") == {"posts": 3}  # another check resets the count
+
+
+def test_brand_name_with_a_country_limits_the_run_to_that_country():
+    from fbreviews.fburl import country_from_brand
+    assert country_from_brand("Domino's Pizza България") == "Bulgaria"
+    assert country_from_brand("KFC Bulgaria") == "Bulgaria"
+    assert country_from_brand("Starbucks България") == "Bulgaria"
+    assert country_from_brand("Costa Coffee") is None
+    assert country_from_brand("Five Guys") is None
+
+
+def test_locations_from_another_country_are_refused(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    m._CFG["country"] = "Bulgaria"
+    assert m.fb_country("538 S. National Ave, Springfield, MO") == "United States"
+    r = m.fb_add_locations([
+        {"name": "Domino's Pizza (624 Boston Rd, Springfield, MA)", "url": "https://www.facebook.com/BostonRdDominos",
+         "address": "624 Boston Rd, Springfield, MA, US"},
+        {"name": "Domino's Pizza (538 S. National Ave, Springfield, MO)",
+         "url": "https://www.facebook.com/DominosPizzaSpringfieldMO538SNationalAve"},
+        {"name": "Domino's Pizza Младост", "url": "https://www.facebook.com/dominos.mladost",
+         "address": "бул. Ал. Малинов 51, София, България"},
+        {"name": "Domino's Pizza Lozenets", "url": "https://www.facebook.com/dominos.lozenets"},
+    ])
+    assert r["added"] == 2 and len(r["refused"]) == 2
+    assert [l["url"].rsplit("/", 1)[-1] for l in m.fb_locations()] == ["dominos.mladost", "dominos.lozenets"]
+
+
+def test_preflight_tries_another_sample_when_one_page_shows_few_reviews(tmp_path):
+    m, _ = load_helpers(tmp_path)
+    m.fb_add_locations([{"name": "A", "url": "https://www.facebook.com/pageA"},
+                        {"name": "B", "url": "https://www.facebook.com/pageB"}])
+    opened = []
+    m.fb_open = lambda u: opened.append(u) or {"ok": True, "state": "ok"}
+    m._collect = lambda opts, reset=False: ([{"text": "x"}], {"url": opened[-1]})
+    m.fb_check_reviews = lambda r, d, mx, mode: (
+        {"healthy": False, "failed": ["coverage"], "warnings": [], "stats": {}} if "pageA" in d["url"]
+        else {"healthy": True, "failed": [], "warnings": [], "stats": {}})
+    rep = m.fb_preflight()
+    assert rep["healthy"] is True and len(opened) == 2
+    # a real breakage (not just a short list) still stops at once
+    m.fb_check_reviews = lambda r, d, mx, mode: {"healthy": False, "failed": ["empty_text"], "warnings": [], "stats": {}}
+    opened.clear()
+    assert m.fb_preflight()["healthy"] is False and len(opened) == 1

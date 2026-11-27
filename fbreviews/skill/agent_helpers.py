@@ -99,6 +99,8 @@ _COUNTRY_BG = {"българия": "Bulgaria", "румъния": "Romania", "г�
                "швейцария": "Switzerland", "португалия": "Portugal", "словения": "Slovenia", "словакия": "Slovakia",
                "черна гора": "Montenegro", "албания": "Albania", "босна и херцеговина": "Bosnia and Herzegovina"}
 _COUNTRY_EN = {"us": "United States", "usa": "United States", "uk": "United Kingdom", "bg": "Bulgaria"}
+_US_STATES = set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC "
+                 "ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split())
 
 
 def fb_country(text):
@@ -113,9 +115,28 @@ def fb_country(text):
             return _COUNTRY_BG[low]
         if low in _COUNTRY_EN:
             return _COUNTRY_EN[low]
+        if p2 in _US_STATES and len(parts) >= 2:
+            return "United States"   # '538 S. National Ave, Springfield, MO'
         if re.fullmatch(r"[A-Z][A-Za-z .'-]{2,40}", p2) and len(parts) >= 2:
             return p2   # an English country name, as Facebook prints it
         return None
+    return None
+
+
+def _norm_country(c):
+    low = str(c or "").strip().lower()
+    return _COUNTRY_BG.get(low) or _COUNTRY_EN.get(low) or (str(c).strip() if c else None)
+
+
+def _loc_country(loc):
+    """The country a location dict states: its country field, its address, or an address in its name
+    ('Domino's Pizza (538 S. National Ave, Springfield, MO)')."""
+    if loc.get("country"):
+        return _norm_country(loc["country"])
+    for text in [loc.get("address")] + re.findall(r"\(([^()]*,[^()]*)\)", str(loc.get("name") or "")):
+        c = fb_country(text)
+        if c:
+            return c
     return None
 
 
@@ -435,16 +456,25 @@ def fb_add_locations(items):
     Returns {'added': n, 'total': n}. URLs are normalized and deduplicated; the cap is max_locations."""
     locs = _read("locations.json", [])
     known = {l["url"] for l in locs} | {b["url"] for b in _read("brand_pages.json", [])}
-    added = 0
+    target = _norm_country(_CFG.get("country")) if str(_CFG.get("country") or "all").lower() not in (
+        "all", "world", "всички") else None
+    added, refused = 0, []
     for it in items or []:
         url = fb_page_url((it or {}).get("url", ""))
         if not url or url in known or len(locs) >= MAX_LOCATIONS:
             continue
-        locs.append(_fill_country({k: it.get(k) for k in ("name", "address", "city", "country", "category", "rating_text", "source")}
-                                  | {"url": url}))
+        loc = _fill_country({k: it.get(k) for k in ("name", "address", "city", "country", "category", "rating_text", "source")}
+                            | {"url": url})
+        c = _loc_country(loc)
+        if target and c and c.lower() != target.lower():
+            refused.append(f"{loc.get('name') or url} ({c})")   # this run is for one country (e.g. 'Domino's Pizza България')
+            continue
+        locs.append(loc)
         known.add(url)
         added += 1
     _write("locations.json", locs)
+    if refused:
+        _say(f"Пропускам локации извън {target}: " + ", ".join(refused)[:300])
     st = _search_state()
     if st.get("pending"):  # one count per search: did the last search bring a new location?
         st["idle"] = 0 if added else st.get("idle", 0) + 1
@@ -454,7 +484,12 @@ def fb_add_locations(items):
         _write("search_state.json", st)
     if added:
         _say(f"Добавени локации: +{added} (общо {len(locs)}): " + ", ".join(l.get("name") or l["url"] for l in locs[-added:])[:300])
-    return {"added": added, "total": len(locs), "cap": MAX_LOCATIONS}
+    out = {"added": added, "total": len(locs), "cap": MAX_LOCATIONS}
+    if refused:
+        out["refused"] = refused
+        out["note"] = (f"this run is for {target} only: Pages in another country were not added. Search with {target} "
+                       "city names (in the local language too) and add only locations in that country.")
+    return out
 
 
 def fb_locations():
@@ -935,7 +970,8 @@ def fb_preflight(sample_url=None, search_query=None, reload=True, max_reviews=60
                "sample": [_trim(r) for r in reviews[:3] if isinstance(r, dict)], "diagnostics": diag}
     else:
         cands = [sample_url] if sample_url else [l["url"] for l in fb_locations()[:3]]
-        for u in cands:
+        short = None   # a page that only shows part of its reviews (Facebook does that) is not proof of a broken
+        for u in cands:  # extractor: try the next sample page before calling the run unhealthy (Domino's, Fornetti)
             rurl = u if re.search(r"/reviews|sk=reviews", u) else fb_reviews_url(u)
             o = fb_open(rurl)
             if o.get("state") in ("login_required", "blocked", "stopped", "cap_reached"):
@@ -947,8 +983,13 @@ def fb_preflight(sample_url=None, search_query=None, reload=True, max_reviews=60
             reviews, diag = _collect(opts)
             rev = {"url": rurl, **fb_check_reviews(reviews, diag, max_reviews, "preflight"),
                    "sample": [_trim(r) for r in reviews[:3] if isinstance(r, dict)], "diagnostics": diag}
+            if rev["healthy"] is False and rev.get("failed") == ["coverage"] and not sample_url:
+                short = short or rev
+                continue
             if rev["healthy"] is not None:
                 break
+        if short and (rev is None or rev.get("healthy") is not True):
+            rev = short
     rep["reviews"] = rev
     rep["override"] = fb_override(code=False)
     if rep["override"]["error"] and rev is not None:

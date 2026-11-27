@@ -24,7 +24,7 @@ from .cdp_bridge import BridgeThread, facebook_logged_in
 from .classify import classify_replies
 from .config import Settings
 from .export import summarize, write_excel, write_json
-from .fburl import normalize_page_url, page_slug as fburl_slug, post_key, slug
+from .fburl import country_from_brand, normalize_page_url, page_slug as fburl_slug, post_key, slug
 from .models import Ad, BrandReport, LocationPage, LocationResult, Post, PostComment, Reply, Review
 
 logger = logging.getLogger("fbreviews.pipeline")
@@ -476,6 +476,8 @@ async def run(
         lite = True  # a lite run continues as lite
         hidden = hidden or bool(meta.get("hidden"))
     country = country or meta.get("country") or s.country
+    if str(country or "all").lower() in ("all", "world", "всички") and country_from_brand(brand):
+        country = country_from_brand(brand)   # "Domino's Pizza България" = Bulgaria only (it once took US stores)
     if resume and meta.get("posts") is False:
         posts = False  # a run started without posts continues without them
     meta.update({"brand": brand, "max_locations": max_locations, "max_reviews": max_reviews, "model": s.llm_model,
@@ -496,7 +498,15 @@ async def run(
     config = {"pace_min_s": s.pace_min_s, "pace_max_s": s.pace_max_s, "daily_page_cap": s.daily_page_cap,
               "scroll_max_s": s.location_max_s,
               "max_reviews": max_reviews, "max_locations": max_locations, "lite": lite,
-              "posts": posts, "post_comments": posts}
+              "posts": posts, "post_comments": posts, "country": country}
+    if not locations_given and str(country or "all").lower() not in ("all", "world", "всички") \
+            and (ws / "locations.json").exists():   # a resumed run drops stores it took from another country
+        locs = json.loads((ws / "locations.json").read_text())
+        kept = [l for l in locs if not l.get("country")
+                or str(country_from_brand(l["country"]) or l["country"]).lower() == str(country).lower()]
+        if len(kept) != len(locs):
+            (ws / "locations.json").write_text(json.dumps(kept, ensure_ascii=False, indent=1))
+            progress(f"Махам {len(locs) - len(kept)} локации извън {country}")
     progress(f"Папка: {run_dir}")
 
     bridge = None

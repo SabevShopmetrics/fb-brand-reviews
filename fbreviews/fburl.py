@@ -78,3 +78,21 @@ def post_key(url: str) -> str:
     q = parse_qs(u.query)
     keep = "&".join(f"{k}={q[k][0]}" for k in ("story_fbid", "fbid", "v", "id") if k in q)
     return f"{host}{u.path.rstrip('/').lower()}" + (f"?{keep}" if keep else "")
+
+
+_BRAND_COUNTRY = {"българия": "Bulgaria", "bulgaria": "Bulgaria", "bg": "Bulgaria", "румъния": "Romania",
+                  "romania": "Romania", "românia": "Romania", "гърция": "Greece", "greece": "Greece",
+                  "сърбия": "Serbia", "serbia": "Serbia", "србија": "Serbia", "македония": "North Macedonia",
+                  "macedonia": "North Macedonia", "турция": "Turkey", "turkey": "Turkey", "türkiye": "Turkey",
+                  "hungary": "Hungary", "magyarország": "Hungary", "унгария": "Hungary", "uk": "United Kingdom",
+                  "usa": "United States", "germany": "Germany", "deutschland": "Germany", "германия": "Germany"}
+
+
+def country_from_brand(brand: str) -> str | None:
+    """A brand asked as 'Domino's Pizza България' / 'KFC Bulgaria' means that country only (English name);
+    None when the name names no country."""
+    words = re.findall(r"[\wÀ-ÿА-я]+", str(brand or "").lower())
+    for w in reversed(words):
+        if w in _BRAND_COUNTRY:
+            return _BRAND_COUNTRY[w]
+    return None

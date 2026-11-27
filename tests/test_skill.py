@@ -184,6 +184,12 @@ def test_check_reviews_thresholds(tmp_path):
     assert m.fb_check_reviews(many, {"review_total": 304})["failed"] == ["coverage"]
     h = m.fb_check_reviews(many, {"review_total": 304, "scroll_reason": "no_more"}, mode="run")
     assert "coverage" not in h["failed"] and any(w.startswith("list_end") for w in h["warnings"])   # Supa Star
+    for n, total in ((6, 11), (3, 6)):  # Fornetti Falatozó / Pásztó: a short list Facebook ended itself
+        h = m.fb_check_reviews(good[:n], {"review_total": total, "scroll_reason": "no_more"}, mode="run")
+        assert "coverage" not in h["failed"] and any(w.startswith("list_end") for w in h["warnings"])
+    assert m.fb_check_reviews(good[:6], {"review_total": 11}, mode="run")["failed"] == ["coverage"]  # still loading
+    assert m.fb_check_reviews(good[:2], {"review_total": 40, "scroll_reason": "no_more"},
+                              mode="run")["failed"] == ["coverage"]  # 5% read: the extractor, not Facebook
     assert "over_total" in m.fb_check_reviews(good, {"review_total": 3})["failed"]
     h = m.fb_check_reviews([_review(1, recommends="yes", comment_count="2")], {"review_total": 1})
     assert h["failed"] == ["schema"] and "recommends" in h["details"]["schema"]

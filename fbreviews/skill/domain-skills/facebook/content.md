@@ -7,7 +7,7 @@ check (`login_required` / `blocked`), stop; never get around it.
 ## Helpers
 | Helper | What it does |
 |---|---|
-| `fb_progress()` | `posts_todo` (Pages without posts yet), `comments_todo` (posts whose comments are not read yet), `stopped` |
+| `fb_progress()` | `posts_todo` (a list: Pages without posts yet), `comments_todo` (a NUMBER: posts whose comments are not read yet), `stopped` |
 | `fb_extract_posts(url, name=...)` | scrolls the Page timeline: every post with date, text, type (photo / album / video / reel / link / text), photos, reactions, comments, shares, views, link → `posts/<slug>.json` |
 | `fb_extract_comments()` | opens every post that has comments (newest first), reads author, text, date, reply level and the Page's own replies; works ~40 min per call and saves after every post → call again until `done` |
 

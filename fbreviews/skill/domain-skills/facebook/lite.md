@@ -11,7 +11,7 @@ Read `preflight.md` only for its safety rules; its review checks do not apply he
 ## Helpers
 | Helper | What it does |
 |---|---|
-| `fb_progress()` | `{locations, done, todo, stopped}` — call FIRST: the run may be a continuation |
+| `fb_progress()` | `{locations, done, todo, stopped}` — call FIRST: the run may be a continuation. `locations`, `done` are NUMBERS (no `len()`); `todo` is a list |
 | `fb_add_brand_pages([{name, url, scope}])` | record the brand's official Pages (global / country): a separate section, never locations |
 | `fb_extract_brand(url, name=...)` | the brand Page as its own section: public data |
 | `fb_web_search(query, pages=1)` | Bing results pointing to facebook.com: `[{title, url, page_url, snippet}]`, or `{'error':'search_challenge'}` |

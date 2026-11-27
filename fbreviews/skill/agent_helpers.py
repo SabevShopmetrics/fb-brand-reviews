@@ -765,7 +765,9 @@ def fb_check_reviews(reviews, diagnostics=None, max_reviews=None, mode="prefligh
             cov = round(n / expect, 3) if expect else 1.0
             stats["coverage"] = cov
             need = HEALTH["coverage_min"] if mode == "preflight" else HEALTH["coverage_min_run"]
-            list_end = diag.get("scroll_reason") == "no_more" and n >= 30
+            # the list ended by itself: a long one (30+ read), or a short one with a fair share read (Fornetti
+            # Falatozó: 6 of 11, Pásztó: 3 of 6 — Facebook counts ratings it does not list on small pages too)
+            list_end = diag.get("scroll_reason") == "no_more" and (n >= 30 or (n >= 2 and cov >= 0.3))
             if cov < need and expect - n > 2 and list_end:
                 # the list itself stopped loading after a long wait with a healthy sample: Facebook's count includes
                 # old ratings it no longer lists. Keep what was read (partial), do not "repair" the extractor.

@@ -5,6 +5,7 @@
 #   - a brand left unfinished (posts / comments left) is run again, at most 3 times in a row
 #   - daily page cap reached  -> sleeps until 00:15 and continues the same brand
 #   - Facebook asks for a login / security check -> the queue STOPS (never gets around it)
+#   - a line "FRESH <brand>" starts a brand-new run (e.g. a brand that only has an old lite test), then finishes it
 # Start:  nohup zsh scripts/queue.sh > output/runs/queue.log 2>&1 &      Stop: touch output/QUEUE_STOP
 cd "$(dirname "$0")/.." || exit 1
 Q="${1:-output/queue.txt}"
@@ -15,8 +16,9 @@ wait_free() { while busy; do sleep 30; [ -f output/QUEUE_STOP ] && { say "QUEUE_
 say "опашка: $Q"
 while true; do
   [ -f output/QUEUE_STOP ] && { say "QUEUE_STOP — спирам опашката"; rm -f output/QUEUE_STOP; exit 0; }
-  brand=$(grep -v '^\s*#' "$Q" | grep -v '^\s*$' | head -1)
-  [ -z "$brand" ] && { say "опашката е празна — край"; exit 0; }
+  line=$(grep -v '^\s*#' "$Q" | grep -v '^\s*$' | head -1)
+  [ -z "$line" ] && { say "опашката е празна — край"; exit 0; }
+  brand="${line#FRESH }"; fresh_run=""; [ "$brand" != "$line" ] && fresh_run=1
   tries=0
   wait_free
   # a brand finished in the last 3 days (nothing left to collect) is not run again
@@ -30,14 +32,14 @@ runs = sorted(Path("output").glob(f"{slug(b)}_*/report.json"), key=lambda f: f.p
 print("yes" if runs and time.time() - runs[0].stat().st_mtime < 3 * 86400 and not unfinished_run(Path("output"), b) else "")
 PY
 )
-  if [ "$fresh" = "yes" ]; then
+  if [ "$fresh" = "yes" ] && [ -z "$fresh_run" ]; then
     say "• $brand вече е готов (последните 3 дни) — пропускам"
   else
   while true; do
     wait_free
     tries=$((tries + 1))
     say "▶ $brand (опит $tries)"
-    out=$(scripts/run_bg.sh "$brand")
+    if [ -n "$fresh_run" ] && [ $tries -eq 1 ]; then out=$(FRESH=1 scripts/run_bg.sh "$brand"); else out=$(scripts/run_bg.sh "$brand"); fi
     say "  $out"
     sleep 5
     wait_free
@@ -63,12 +65,12 @@ PY
   done
   fi
   # mark the first pending line with this brand as done
-  python3 - "$Q" "$brand" <<'PY'
+  python3 - "$Q" "$brand" "$line" <<'PY'
 import sys, datetime
-path, brand = sys.argv[1], sys.argv[2]
+path, brand, line = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(path, encoding="utf-8").read().splitlines()
 for i, l in enumerate(lines):
-    if l.strip() == brand:
+    if l.strip() == line.strip():
         lines[i] = f"# done {datetime.datetime.now():%Y-%m-%d %H:%M} {brand}"
         break
 open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")

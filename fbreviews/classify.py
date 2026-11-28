@@ -184,6 +184,25 @@ Answer ONLY with JSON: {"items":[{"id":<id>,"label":"generated|manual|uncertain"
 "confidence":0.0-1.0,"reason":"<max 20 words>"}]}"""
 
 
+LLM_TIMEOUT = 180  # seconds per model call; a server that drops the connection must not hang the report forever
+
+
+async def llm_chat(base_url: str, api_key: str, model: str, messages: list[dict]) -> str:
+    """One model call that always ends: a request timeout plus a hard asyncio deadline."""
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-needed", timeout=LLM_TIMEOUT, max_retries=0)
+    try:
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(model=model, temperature=0, messages=messages), LLM_TIMEOUT + 15)
+        return resp.choices[0].message.content or ""
+    finally:
+        try:
+            await client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _parse_json(text: str) -> dict:
     text = (text or "").strip()
     m = re.search(r"\{.*\}", text, re.S)
@@ -191,18 +210,11 @@ def _parse_json(text: str) -> dict:
 
 
 async def llm_judge(batch: list[dict], *, base_url: str, api_key: str, model: str) -> dict[int, dict]:
-    from openai import AsyncOpenAI
-
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-needed")
     msg = json.dumps({"items": batch}, ensure_ascii=False)
     for attempt in range(3):
         try:
-            resp = await client.chat.completions.create(
-                model=model,
-                temperature=0,
-                messages=[{"role": "system", "content": JUDGE_SYSTEM}, {"role": "user", "content": msg}],
-            )
-            data = _parse_json(resp.choices[0].message.content or "")
+            data = _parse_json(await llm_chat(base_url, api_key, model, [
+                {"role": "system", "content": JUDGE_SYSTEM}, {"role": "user", "content": msg}]))
             return {int(x["id"]): x for x in data.get("items", []) if "id" in x}
         except Exception as e:  # malformed JSON, transient server error
             logger.warning("LLM judge batch failed (attempt %d): %s", attempt + 1, e)

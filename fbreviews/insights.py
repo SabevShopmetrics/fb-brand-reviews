@@ -85,18 +85,13 @@ def _clean(item: dict, rv: Review) -> dict:
 
 
 async def _llm_batch(batch: list[dict], *, base_url: str, api_key: str, model: str) -> dict[int, dict]:
-    from openai import AsyncOpenAI
+    from .classify import _parse_json, llm_chat
 
-    from .classify import _parse_json
-
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-needed")
     msg = json.dumps({"items": batch}, ensure_ascii=False)
     for attempt in range(3):
         try:
-            resp = await client.chat.completions.create(
-                model=model, temperature=0,
-                messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
-            data = _parse_json(resp.choices[0].message.content or "")
+            data = _parse_json(await llm_chat(base_url, api_key, model, [
+                {"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}]))
             return {int(x["id"]): x for x in data.get("items", []) if isinstance(x, dict) and "id" in x}
         except Exception as e:  # malformed JSON, transient server error
             logger.warning("insights batch failed (attempt %d): %s", attempt + 1, e)
@@ -324,18 +319,13 @@ Return only JSON:
 
 
 async def _llm_json(system: str, payload: dict, llm: dict) -> dict:
-    from openai import AsyncOpenAI
+    from .classify import _parse_json, llm_chat
 
-    from .classify import _parse_json
-
-    client = AsyncOpenAI(base_url=llm["base_url"], api_key=llm.get("api_key") or "not-needed")
     for attempt in range(3):
         try:
-            resp = await client.chat.completions.create(
-                model=llm["model"], temperature=0,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
-            return _parse_json(resp.choices[0].message.content or "")
+            return _parse_json(await llm_chat(llm["base_url"], llm.get("api_key") or "", llm["model"], [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]))
         except Exception as e:  # noqa: BLE001
             logger.warning("insights call failed (attempt %d): %s", attempt + 1, e)
             await asyncio.sleep(2 * (attempt + 1))

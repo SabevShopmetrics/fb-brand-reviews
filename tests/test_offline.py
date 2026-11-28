@@ -168,3 +168,30 @@ def test_excel_with_structured_actions(tmp_path):
     write_excel(report, tmp_path / "r.xlsx")
     rows = [[c.value for c in r] for r in load_workbook(tmp_path / "r.xlsx")["Изводи"].iter_rows(min_row=2)]
     assert ["Следваща стъпка (спешно)", "Отговорете", "t"] in rows and ["Следваща стъпка", "низ", None] in rows
+
+
+def test_a_model_server_that_never_answers_does_not_hang_the_report():
+    """The report's model calls (reply judge, insights) must give up when the server goes silent."""
+    import asyncio
+    import socket
+    import threading
+    import time
+
+    from fbreviews import classify, insights
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(16)
+    held = []
+    threading.Thread(target=lambda: [held.append(srv.accept()) for _ in range(16)], daemon=True).start()
+    url = f"http://127.0.0.1:{srv.getsockname()[1]}/v1"
+    old = classify.LLM_TIMEOUT
+    classify.LLM_TIMEOUT = 1
+    try:
+        t = time.monotonic()
+        assert asyncio.run(classify.llm_judge([{"id": 1}], base_url=url, api_key="", model="m")) == {}
+        assert asyncio.run(insights._llm_json("s", {}, {"base_url": url, "model": "m"})) == {}
+        assert time.monotonic() - t < 60
+    finally:
+        classify.LLM_TIMEOUT = old
+        srv.close()

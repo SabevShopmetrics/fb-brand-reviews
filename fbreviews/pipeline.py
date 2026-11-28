@@ -208,6 +208,18 @@ def load_posts(ws: Path, url: str, name: str | None = None, extra_names=()) -> l
     return out
 
 
+def _mark_final(run_dir: Path, final: bool) -> None:
+    """meta["final"]: the full end-of-run report was written. An interim report (or a final one cut off) is not."""
+    f = Path(run_dir) / "meta.json"
+    try:
+        meta = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return
+    if meta.get("final") != final:
+        meta["final"] = final
+        f.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+
+
 def unfinished_run(out_dir: Path, brand: str, max_age_days: float = 7) -> Path | None:
     """The brand's latest run if it is recent and not finished: locations left, posts or comments not collected
     (unless the run was lite / without posts), or no report yet. None = start a new run."""
@@ -227,7 +239,8 @@ def unfinished_run(out_dir: Path, brand: str, max_age_days: float = 7) -> Path |
     p = progress_of(d)
     content = not meta.get("lite") and meta.get("posts", True) is not False
     left = (p["locations"] and p["done"] < p["locations"] and not locations_stuck(meta, p)) or (content and (p["posts_todo"] or p["comments_todo"])) \
-        or not (d / "report.json").exists() or (p["locations"] == 0 and not meta.get("rounds"))
+        or not (d / "report.json").exists() or (p["locations"] == 0 and not meta.get("rounds")) \
+        or meta.get("final") is False
     return d if left else None
 
 
@@ -344,7 +357,8 @@ def drop_reposts(brand_results: list[LocationResult], results: list[LocationResu
     return out
 
 
-async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True) -> BrandReport:
+async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True, interim: bool = False) -> BrandReport:
+    _mark_final(run_dir, False)  # until this report is written, the run is not finished (a hang here must be resumed)
     brand_results = load_results(run_dir, "brand")
     results = dedupe_pages(brand_results, load_results(run_dir))
     both = drop_reposts(brand_results, results)
@@ -389,6 +403,7 @@ async def finalize(run_dir: Path, brand: str, s: Settings, use_llm: bool = True)
         write_index(run_dir.parent)
     except Exception as e:  # noqa: BLE001
         logger.warning("dashboard not rebuilt: %s", e)
+    _mark_final(run_dir, not interim)
     return report
 
 
@@ -417,7 +432,7 @@ async def _content_rounds(run_dir, brand, s, llm, browser, ws, config, country, 
             await tail
         after = progress_of(run_dir)
         try:
-            await finalize(run_dir, brand, s, use_llm=False)
+            await finalize(run_dir, brand, s, use_llm=False, interim=True)
             progress(f"   междинен отчет: {run_dir / 'report.html'}")
         except Exception as e:  # noqa: BLE001
             logger.warning("interim report failed: %s", e)
@@ -589,7 +604,7 @@ async def run(
             progress(f"   → локации {after['locations']}, готови {after['done']}. {str(sm.get('notes', ''))[:300]}")
             if after["done"]:
                 try:  # interim report from what is saved so far (the model classification runs at the end)
-                    await finalize(run_dir, brand, s, use_llm=False)
+                    await finalize(run_dir, brand, s, use_llm=False, interim=True)
                     progress(f"   междинен отчет: {run_dir / 'report.html'}")
                 except Exception as e:
                     logger.warning("interim report failed: %s", e)

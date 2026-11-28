@@ -862,3 +862,22 @@ def test_agent_rereading_the_lists_with_nothing_changing_is_refused(tmp_path):
     exec("p = fb_progress()", agent)
     for _ in range(10):   # the helpers' own reads never count
         exec("fb_locations()", m.__dict__)
+
+
+def test_a_run_cut_off_while_writing_its_final_report_is_resumed(tmp_path):
+    """Everything was collected but the final report (model classification) hung and was stopped: only the interim
+    report exists. The queue must resume that run (just the report), not count it done nor start the brand anew."""
+    from fbreviews.pipeline import _mark_final, unfinished_run
+    d = tmp_path / "divaka_20261126-150309"
+    (d / "workspace" / "results").mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"rounds": [{}], "brand": "Дивака", "posts": False}))
+    (d / "workspace" / "locations.json").write_text(json.dumps([{"url": "https://www.facebook.com/d1"}]))
+    (d / "workspace" / "results" / "d1.json").write_text(json.dumps(
+        {"location": {"name": "D1", "url": "https://www.facebook.com/d1"}, "status": "ok", "reviews": []}))
+    (d / "report.json").write_text("{}")
+    assert unfinished_run(tmp_path, "Дивака") is None        # older runs (no flag) stay as they were
+    _mark_final(d, False)                                     # interim report / final report started
+    assert unfinished_run(tmp_path, "Дивака") == d
+    _mark_final(d, True)                                      # final report written
+    assert unfinished_run(tmp_path, "Дивака") is None
+    assert json.loads((d / "meta.json").read_text())["brand"] == "Дивака"
